@@ -21,6 +21,10 @@ import type { Equipment } from '../modules/equipment';
 import type { GymEquipmentInventoryItem } from '../modules/gym-inventory';
 import type { ExerciseMaster } from '../modules/exercise';
 import { exerciseSeeds } from '../modules/exercise/seed';
+import type { MovementFamily } from '../modules/movement-family';
+import { movementFamilyAssignments, movementFamilySeeds } from '../modules/movement-family/seed';
+import type { EquipmentRequirement, ExerciseMovementFamily, RequirementGroup } from '../modules/exercise-equipment';
+import { equipmentRequirementSeeds, requirementGroupSeeds } from '../modules/exercise-equipment/seed';
 
 // --- Database Singleton ---
 let db: SQLite.SQLiteDatabase | null = null;
@@ -142,7 +146,7 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
     CREATE TABLE IF NOT EXISTS gym_equipment (
       id TEXT PRIMARY KEY, gym_id TEXT NOT NULL, equipment_id TEXT NOT NULL,
       quantity INTEGER NOT NULL CHECK(quantity >= 1), area TEXT, notes TEXT,
-      status TEXT NOT NULL DEFAULT 'available', verified INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'available', verified INTEGER NOT NULL DEFAULT 0, capabilities_json TEXT,
       verified_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
       FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE RESTRICT,
       FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE RESTRICT,
@@ -154,6 +158,32 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       secondary_muscles_json TEXT NOT NULL, description TEXT, notes TEXT, status TEXT NOT NULL DEFAULT 'active',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS movement_families (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, aliases_json TEXT NOT NULL DEFAULT '[]',
+      primary_muscles_json TEXT NOT NULL, secondary_muscles_json TEXT NOT NULL,
+      category TEXT, description TEXT, status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS exercise_movement_families (
+      id TEXT PRIMARY KEY, exercise_id TEXT NOT NULL, movement_family_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('primary', 'secondary')), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE RESTRICT,
+      FOREIGN KEY (movement_family_id) REFERENCES movement_families(id) ON DELETE RESTRICT,
+      UNIQUE(exercise_id, movement_family_id)
+    );
+    CREATE TABLE IF NOT EXISTS exercise_requirement_groups (
+      id TEXT PRIMARY KEY, exercise_id TEXT NOT NULL, name TEXT, priority INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS exercise_equipment_requirements (
+      id TEXT PRIMARY KEY, requirement_group_id TEXT NOT NULL, equipment_id TEXT NOT NULL,
+      requirement_level TEXT NOT NULL CHECK(requirement_level IN ('required', 'preferred', 'optional')),
+      notes TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      FOREIGN KEY (requirement_group_id) REFERENCES exercise_requirement_groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE RESTRICT,
+      UNIQUE(requirement_group_id, equipment_id)
+    );
 
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
@@ -163,16 +193,34 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_domain_events_entity ON domain_events(entity_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_gym_equipment_gym ON gym_equipment(gym_id);
     CREATE INDEX IF NOT EXISTS idx_gym_equipment_equipment ON gym_equipment(equipment_id);
+    CREATE INDEX IF NOT EXISTS idx_exercise_movement_families_exercise ON exercise_movement_families(exercise_id);
+    CREATE INDEX IF NOT EXISTS idx_exercise_movement_families_family ON exercise_movement_families(movement_family_id);
+    CREATE INDEX IF NOT EXISTS idx_requirement_groups_exercise ON exercise_requirement_groups(exercise_id, priority);
+    CREATE INDEX IF NOT EXISTS idx_equipment_requirements_group ON exercise_equipment_requirements(requirement_group_id);
   `);
 
   for (const item of exerciseSeeds) {
     await database.runAsync('INSERT OR IGNORE INTO exercises (id,name,aliases_json,category,movement_pattern,primary_muscles_json,secondary_muscles_json,description,notes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [item.id,item.name,JSON.stringify(item.aliases),item.category,item.movementPattern,JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.description ?? null,item.notes ?? null,item.status,item.createdAt,item.updatedAt]);
   }
+  for (const item of movementFamilySeeds) {
+    await database.runAsync('INSERT OR IGNORE INTO movement_families (id,name,aliases_json,primary_muscles_json,secondary_muscles_json,category,description,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', [item.id,item.name,JSON.stringify(item.aliases),JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.category ?? null,item.description ?? null,item.status,item.createdAt,item.updatedAt]);
+  }
+  for (const [exerciseId, movementFamilyId, role] of movementFamilyAssignments) {
+    await database.runAsync('INSERT OR IGNORE INTO exercise_movement_families (id,exercise_id,movement_family_id,role,created_at,updated_at) VALUES (?,?,?,?,?,?)', [`seed-family-${exerciseId}-${movementFamilyId}`,exerciseId,movementFamilyId,role,Date.now(),Date.now()]);
+  }
+  const nativeEquipmentSeeds: Array<[string, string, string]> = [
+    ['web-equipment-1','Barbell','free_weight'],['web-equipment-2','Dumbbell','free_weight'],['web-equipment-3','Flat Bench','free_weight'],['web-equipment-4','Adjustable Bench','free_weight'],['web-equipment-5','Power Rack','rack'],['web-equipment-6','Squat Rack','rack'],['web-equipment-7','Smith Machine','rack'],['web-equipment-8','Hack Squat','machine'],['web-equipment-9','Leg Press','machine'],['web-equipment-10','Leg Extension','machine'],['web-equipment-11','Leg Curl','machine'],['web-equipment-12','Hip Abductor','machine'],['web-equipment-13','Hip Adductor','machine'],['web-equipment-14','Calf Raise','machine'],['web-equipment-15','Chest Press','machine'],['web-equipment-16','Incline Chest Press','machine'],['web-equipment-17','Pec Deck','machine'],['web-equipment-18','Shoulder Press','machine'],['web-equipment-19','Lat Pulldown','cable'],['web-equipment-20','Seated Row','machine'],['web-equipment-21','Cable Station','cable'],['web-equipment-22','Functional Trainer','cable']
+  ];
+  for (const [id, name, category] of nativeEquipmentSeeds) await database.runAsync('INSERT OR IGNORE INTO equipment (id,name,category,aliases_json,archived,created_at,updated_at) VALUES (?,?,?,?,?,?,?)', [id,name,category,'[]',0,Date.now(),Date.now()]);
+  for (const item of requirementGroupSeeds) await database.runAsync('INSERT OR IGNORE INTO exercise_requirement_groups (id,exercise_id,name,priority,created_at,updated_at) VALUES (?,?,?,?,?,?)', [item.id,item.exerciseId,item.name ?? null,item.priority,item.createdAt,item.updatedAt]);
+  for (const item of equipmentRequirementSeeds) await database.runAsync('INSERT OR IGNORE INTO exercise_equipment_requirements (id,requirement_group_id,equipment_id,requirement_level,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?)', [item.id,item.requirementGroupId,item.equipmentId,item.level,item.notes ?? null,item.createdAt,item.updatedAt]);
 
   const sessionColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sessions)');
   const columnNames = new Set(sessionColumns.map(column => column.name));
   if (!columnNames.has('paused_at')) await database.execAsync('ALTER TABLE sessions ADD COLUMN paused_at INTEGER');
   if (!columnNames.has('completed_at')) await database.execAsync('ALTER TABLE sessions ADD COLUMN completed_at INTEGER');
+  const inventoryColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(gym_equipment)');
+  if (!new Set(inventoryColumns.map(column => column.name)).has('capabilities_json')) await database.execAsync("ALTER TABLE gym_equipment ADD COLUMN capabilities_json TEXT");
 }
 
 // ========================================
@@ -523,8 +571,11 @@ export async function getDomainEventsForSession(sessionId: UUID): Promise<Workou
 
 function mapGym(row: any): Gym { return { id: row.id, name: row.name, branchName: row.branch_name, address: row.address, latitude: row.latitude, longitude: row.longitude, externalProvider: row.external_provider, externalPlaceId: row.external_place_id, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapEquipment(row: any): Equipment { return { id: row.id, name: row.name, category: row.category, description: row.description, aliases: JSON.parse(row.aliases_json || '[]'), archived: row.archived === 1, createdAt: row.created_at, updatedAt: row.updated_at }; }
-function mapInventory(row: any): GymEquipmentInventoryItem { return { id: row.id, gymId: row.gym_id, equipmentId: row.equipment_id, quantity: row.quantity, area: row.area, notes: row.notes, status: row.status, verified: row.verified === 1, verifiedAt: row.verified_at, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapInventory(row: any): GymEquipmentInventoryItem { return { id: row.id, gymId: row.gym_id, equipmentId: row.equipment_id, quantity: row.quantity, area: row.area, notes: row.notes, status: row.status, verified: row.verified === 1, verifiedAt: row.verified_at, capabilities: row.capabilities_json ? JSON.parse(row.capabilities_json) : null, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapExercise(row: any): ExerciseMaster { return { id: row.id, name: row.name, aliases: JSON.parse(row.aliases_json || '[]'), category: row.category, movementPattern: row.movement_pattern, primaryMuscles: JSON.parse(row.primary_muscles_json), secondaryMuscles: JSON.parse(row.secondary_muscles_json), description: row.description, notes: row.notes, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapMovementFamily(row: any): MovementFamily { return { id: row.id, name: row.name, aliases: JSON.parse(row.aliases_json || '[]'), primaryMuscles: JSON.parse(row.primary_muscles_json || '[]'), secondaryMuscles: JSON.parse(row.secondary_muscles_json || '[]'), category: row.category, description: row.description, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapRequirementGroup(row: any): RequirementGroup { return { id: row.id, exerciseId: row.exercise_id, name: row.name, priority: row.priority, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapEquipmentRequirement(row: any): EquipmentRequirement { return { id: row.id, requirementGroupId: row.requirement_group_id, equipmentId: row.equipment_id, level: row.requirement_level, notes: row.notes, createdAt: row.created_at, updatedAt: row.updated_at }; }
 
 export async function createGym(gym: Gym): Promise<void> { const database = await getDatabase(); await database.runAsync('INSERT INTO gyms (id,name,branch_name,address,latitude,longitude,external_provider,external_place_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [gym.id,gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.status,gym.createdAt,gym.updatedAt]); }
 export async function getGym(id: UUID): Promise<Gym | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gyms WHERE id = ?', [id]); return row ? mapGym(row) : null; }
@@ -538,17 +589,37 @@ export async function listEquipment(): Promise<Equipment[]> { return (await (awa
 export async function searchEquipment(query: string): Promise<Equipment[]> { const like = `%${query.trim()}%`; return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM equipment WHERE archived = 0 AND (name LIKE ? OR aliases_json LIKE ?) ORDER BY name', [like, like])).map(mapEquipment); }
 export async function updateEquipment(equipment: Equipment): Promise<void> { const database = await getDatabase(); await database.runAsync('UPDATE equipment SET name=?,category=?,description=?,aliases_json=?,archived=?,updated_at=? WHERE id=?', [equipment.name,equipment.category,equipment.description ?? null,JSON.stringify(equipment.aliases),equipment.archived ? 1 : 0,equipment.updatedAt,equipment.id]); }
 
-export async function createInventoryItem(item: GymEquipmentInventoryItem): Promise<void> { const database = await getDatabase(); await database.runAsync('INSERT INTO gym_equipment (id,gym_id,equipment_id,quantity,area,notes,status,verified,verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [item.id,item.gymId,item.equipmentId,item.quantity,item.area ?? null,item.notes ?? null,item.status,item.verified ? 1 : 0,item.verifiedAt ?? null,item.createdAt,item.updatedAt]); }
+export async function createInventoryItem(item: GymEquipmentInventoryItem): Promise<void> { const database = await getDatabase(); await database.runAsync('INSERT INTO gym_equipment (id,gym_id,equipment_id,quantity,area,notes,status,verified,verified_at,capabilities_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [item.id,item.gymId,item.equipmentId,item.quantity,item.area ?? null,item.notes ?? null,item.status,item.verified ? 1 : 0,item.verifiedAt ?? null,item.capabilities ? JSON.stringify(item.capabilities) : null,item.createdAt,item.updatedAt]); }
 export async function getInventoryItem(id: UUID): Promise<GymEquipmentInventoryItem | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gym_equipment WHERE id = ?', [id]); return row ? mapInventory(row) : null; }
 export async function getInventoryByGymAndEquipment(gymId: UUID, equipmentId: UUID): Promise<GymEquipmentInventoryItem | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gym_equipment WHERE gym_id = ? AND equipment_id = ?', [gymId,equipmentId]); return row ? mapInventory(row) : null; }
 export async function listInventoryByGym(gymId: UUID): Promise<GymEquipmentInventoryItem[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM gym_equipment WHERE gym_id = ? ORDER BY created_at', [gymId])).map(mapInventory); }
-export async function updateInventoryItem(item: GymEquipmentInventoryItem): Promise<void> { const database = await getDatabase(); await database.runAsync('UPDATE gym_equipment SET quantity=?,area=?,notes=?,status=?,verified=?,verified_at=?,updated_at=? WHERE id=?', [item.quantity,item.area ?? null,item.notes ?? null,item.status,item.verified ? 1 : 0,item.verifiedAt ?? null,item.updatedAt,item.id]); }
+export async function updateInventoryItem(item: GymEquipmentInventoryItem): Promise<void> { const database = await getDatabase(); await database.runAsync('UPDATE gym_equipment SET quantity=?,area=?,notes=?,status=?,verified=?,verified_at=?,capabilities_json=?,updated_at=? WHERE id=?', [item.quantity,item.area ?? null,item.notes ?? null,item.status,item.verified ? 1 : 0,item.verifiedAt ?? null,item.capabilities ? JSON.stringify(item.capabilities) : null,item.updatedAt,item.id]); }
 export async function removeInventoryByGymAndEquipment(gymId: UUID, equipmentId: UUID): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM gym_equipment WHERE gym_id = ? AND equipment_id = ?', [gymId,equipmentId]); }
 export async function createExerciseMaster(item: ExerciseMaster): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO exercises (id,name,aliases_json,category,movement_pattern,primary_muscles_json,secondary_muscles_json,description,notes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [item.id,item.name,JSON.stringify(item.aliases),item.category,item.movementPattern,JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.description ?? null,item.notes ?? null,item.status,item.createdAt,item.updatedAt]); }
 export async function getExerciseMaster(id: UUID): Promise<ExerciseMaster | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM exercises WHERE id = ?', [id]); return row ? mapExercise(row) : null; }
 export async function listExerciseMasters(): Promise<ExerciseMaster[]> { return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM exercises WHERE status = 'active' ORDER BY name")).map(mapExercise); }
 export async function searchExerciseMasters(query: string): Promise<ExerciseMaster[]> { const like = `%${query.trim()}%`; return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM exercises WHERE status = 'active' AND (name LIKE ? OR aliases_json LIKE ?) ORDER BY name", [like, like])).map(mapExercise); }
 export async function updateExerciseMaster(item: ExerciseMaster): Promise<void> { await (await getDatabase()).runAsync('UPDATE exercises SET name=?,aliases_json=?,category=?,movement_pattern=?,primary_muscles_json=?,secondary_muscles_json=?,description=?,notes=?,status=?,updated_at=? WHERE id=?', [item.name,JSON.stringify(item.aliases),item.category,item.movementPattern,JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.description ?? null,item.notes ?? null,item.status,item.updatedAt,item.id]); }
+
+export async function createMovementFamily(item: MovementFamily): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO movement_families (id,name,aliases_json,primary_muscles_json,secondary_muscles_json,category,description,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', [item.id,item.name,JSON.stringify(item.aliases),JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.category ?? null,item.description ?? null,item.status,item.createdAt,item.updatedAt]); }
+export async function getMovementFamily(id: UUID): Promise<MovementFamily | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM movement_families WHERE id=?', [id]); return row ? mapMovementFamily(row) : null; }
+export async function listMovementFamilies(): Promise<MovementFamily[]> { return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM movement_families WHERE status='active' ORDER BY name")).map(mapMovementFamily); }
+export async function searchMovementFamilies(query: string): Promise<MovementFamily[]> { const like = `%${query.trim()}%`; return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM movement_families WHERE status='active' AND (name LIKE ? OR aliases_json LIKE ?) ORDER BY name", [like, like])).map(mapMovementFamily); }
+export async function updateMovementFamily(item: MovementFamily): Promise<void> { await (await getDatabase()).runAsync('UPDATE movement_families SET name=?,aliases_json=?,primary_muscles_json=?,secondary_muscles_json=?,category=?,description=?,status=?,updated_at=? WHERE id=?', [item.name,JSON.stringify(item.aliases),JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.category ?? null,item.description ?? null,item.status,item.updatedAt,item.id]); }
+export async function assignExerciseMovementFamily(item: ExerciseMovementFamily): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO exercise_movement_families (id,exercise_id,movement_family_id,role,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(exercise_id,movement_family_id) DO UPDATE SET role=excluded.role,updated_at=excluded.updated_at', [item.id,item.exerciseId,item.movementFamilyId,item.role,item.createdAt,item.updatedAt]); }
+export async function removeExerciseMovementFamily(exerciseId: UUID, familyId: UUID): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM exercise_movement_families WHERE exercise_id=? AND movement_family_id=?', [exerciseId,familyId]); }
+export async function getMovementFamiliesForExercise(exerciseId: UUID): Promise<MovementFamily[]> { return (await (await getDatabase()).getAllAsync<any>("SELECT f.* FROM movement_families f JOIN exercise_movement_families x ON x.movement_family_id=f.id WHERE x.exercise_id=? AND f.status='active' ORDER BY f.name", [exerciseId])).map(mapMovementFamily); }
+export async function getExercisesForMovementFamily(familyId: UUID): Promise<ExerciseMaster[]> { return (await (await getDatabase()).getAllAsync<any>("SELECT e.* FROM exercises e JOIN exercise_movement_families x ON x.exercise_id=e.id WHERE x.movement_family_id=? AND e.status='active' ORDER BY e.name", [familyId])).map(mapExercise); }
+export async function getMovementFamiliesForMuscle(muscle: string): Promise<MovementFamily[]> { const like = `%\"${muscle}\"%`; return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM movement_families WHERE status='active' AND (primary_muscles_json LIKE ? OR secondary_muscles_json LIKE ?) ORDER BY name", [like, like])).map(mapMovementFamily); }
+export async function createRequirementGroup(item: RequirementGroup): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO exercise_requirement_groups (id,exercise_id,name,priority,created_at,updated_at) VALUES (?,?,?,?,?,?)', [item.id,item.exerciseId,item.name ?? null,item.priority,item.createdAt,item.updatedAt]); }
+export async function getRequirementGroup(id: UUID): Promise<RequirementGroup | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM exercise_requirement_groups WHERE id=?', [id]); return row ? mapRequirementGroup(row) : null; }
+export async function removeRequirementGroup(id: UUID): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM exercise_requirement_groups WHERE id=?', [id]); }
+export async function getRequirementGroupsForExercise(exerciseId: UUID): Promise<RequirementGroup[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM exercise_requirement_groups WHERE exercise_id=? ORDER BY priority,id', [exerciseId])).map(mapRequirementGroup); }
+export async function addEquipmentRequirement(item: EquipmentRequirement): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO exercise_equipment_requirements (id,requirement_group_id,equipment_id,requirement_level,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(requirement_group_id,equipment_id) DO UPDATE SET requirement_level=excluded.requirement_level,notes=excluded.notes,updated_at=excluded.updated_at', [item.id,item.requirementGroupId,item.equipmentId,item.level,item.notes ?? null,item.createdAt,item.updatedAt]); }
+export async function getEquipmentRequirement(id: UUID): Promise<EquipmentRequirement | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM exercise_equipment_requirements WHERE id=?', [id]); return row ? mapEquipmentRequirement(row) : null; }
+export async function updateEquipmentRequirement(item: EquipmentRequirement): Promise<void> { await (await getDatabase()).runAsync('UPDATE exercise_equipment_requirements SET equipment_id=?,requirement_level=?,notes=?,updated_at=? WHERE id=?', [item.equipmentId,item.level,item.notes ?? null,item.updatedAt,item.id]); }
+export async function removeEquipmentRequirement(id: UUID): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM exercise_equipment_requirements WHERE id=?', [id]); }
+export async function getEquipmentRequirementsForGroup(groupId: UUID): Promise<EquipmentRequirement[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM exercise_equipment_requirements WHERE requirement_group_id=? ORDER BY created_at,id', [groupId])).map(mapEquipmentRequirement); }
 
 // ========================================
 // Store Factory - wraps all functions into a GymFlowStore interface
@@ -594,6 +665,12 @@ export function createStore(): GymFlowStore {
     equipment: { create: createEquipment, get: getEquipment, list: listEquipment, search: searchEquipment, update: updateEquipment },
     inventory: { create: createInventoryItem, get: getInventoryItem, getByGymAndEquipment: getInventoryByGymAndEquipment, listByGym: listInventoryByGym, update: updateInventoryItem, removeByGymAndEquipment: removeInventoryByGymAndEquipment },
     exercises: { create: createExerciseMaster, get: getExerciseMaster, list: listExerciseMasters, search: searchExerciseMasters, update: updateExerciseMaster },
+    taxonomy: {
+      createFamily: createMovementFamily, getFamily: getMovementFamily, listFamilies: listMovementFamilies, searchFamilies: searchMovementFamilies, updateFamily: updateMovementFamily,
+      assign: assignExerciseMovementFamily, removeAssignment: removeExerciseMovementFamily, familiesForExercise: getMovementFamiliesForExercise, exercisesForFamily: getExercisesForMovementFamily, familiesForMuscle: getMovementFamiliesForMuscle,
+      createGroup: createRequirementGroup, getGroup: getRequirementGroup, removeGroup: removeRequirementGroup, groupsForExercise: getRequirementGroupsForExercise,
+      addRequirement: addEquipmentRequirement, getRequirement: getEquipmentRequirement, updateRequirement: updateEquipmentRequirement, removeRequirement: removeEquipmentRequirement, requirementsForGroup: getEquipmentRequirementsForGroup,
+    },
   };
 
   return _store;

@@ -14,6 +14,10 @@ import type { Equipment } from '../modules/equipment';
 import type { GymEquipmentInventoryItem } from '../modules/gym-inventory';
 import type { ExerciseMaster } from '../modules/exercise';
 import { exerciseSeeds } from '../modules/exercise/seed';
+import type { MovementFamily } from '../modules/movement-family';
+import { movementFamilyAssignments, movementFamilySeeds } from '../modules/movement-family/seed';
+import type { EquipmentRequirement, ExerciseMovementFamily, RequirementGroup } from '../modules/exercise-equipment';
+import { equipmentRequirementSeeds, requirementGroupSeeds } from '../modules/exercise-equipment/seed';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -153,6 +157,10 @@ export function createWebStore(): GymFlowStore {
   let equipment = clone(seedEquipment);
   let inventory: GymEquipmentInventoryItem[] = [];
   let exercises: ExerciseMaster[] = clone(exerciseSeeds);
+  let movementFamilies: MovementFamily[] = clone(movementFamilySeeds);
+  let assignments: ExerciseMovementFamily[] = movementFamilyAssignments.map(([exerciseId, movementFamilyId, role], index) => ({ id: `web-family-assignment-${index + 1}`, exerciseId, movementFamilyId, role, createdAt: DEMO_NOW, updatedAt: DEMO_NOW }));
+  let requirementGroups: RequirementGroup[] = clone(requirementGroupSeeds);
+  let equipmentRequirements: EquipmentRequirement[] = clone(equipmentRequirementSeeds);
 
   return {
     sessions: {
@@ -298,6 +306,27 @@ export function createWebStore(): GymFlowStore {
       async list() { return exercises.filter(item => item.status === 'active').sort((a, b) => a.name.localeCompare(b.name)).map(clone); },
       async search(query) { const normalized = query.trim().toLowerCase(); return exercises.filter(item => item.status === 'active' && (!normalized || [item.name, ...item.aliases].some(value => value.toLowerCase().includes(normalized)))).map(clone); },
       async update(item) { const index = exercises.findIndex(value => value.id === item.id); if (index >= 0) exercises[index] = clone(item); },
+    },
+    taxonomy: {
+      async createFamily(item) { movementFamilies.push(clone(item)); },
+      async getFamily(id) { const item = movementFamilies.find(value => value.id === id); return item ? clone(item) : null; },
+      async listFamilies() { return movementFamilies.filter(item => item.status === 'active').sort((a, b) => a.name.localeCompare(b.name)).map(clone); },
+      async searchFamilies(query) { const normalized = query.trim().toLowerCase(); return movementFamilies.filter(item => item.status === 'active' && (!normalized || [item.name, ...item.aliases].some(value => value.toLowerCase().includes(normalized)))).sort((a, b) => a.name.localeCompare(b.name)).map(clone); },
+      async updateFamily(item) { const index = movementFamilies.findIndex(value => value.id === item.id); if (index >= 0) movementFamilies[index] = clone(item); },
+      async assign(item) { const index = assignments.findIndex(value => value.exerciseId === item.exerciseId && value.movementFamilyId === item.movementFamilyId); if (index >= 0) assignments[index] = clone(item); else assignments.push(clone(item)); },
+      async removeAssignment(exerciseId, movementFamilyId) { assignments = assignments.filter(item => item.exerciseId !== exerciseId || item.movementFamilyId !== movementFamilyId); },
+      async familiesForExercise(exerciseId) { const ids = assignments.filter(item => item.exerciseId === exerciseId).map(item => item.movementFamilyId); return movementFamilies.filter(item => ids.includes(item.id) && item.status === 'active').map(clone); },
+      async exercisesForFamily(familyId) { const ids = assignments.filter(item => item.movementFamilyId === familyId).map(item => item.exerciseId); return exercises.filter(item => ids.includes(item.id) && item.status === 'active').map(clone); },
+      async familiesForMuscle(muscle) { return movementFamilies.filter(item => item.status === 'active' && [...item.primaryMuscles, ...item.secondaryMuscles].includes(muscle as never)).map(clone); },
+      async createGroup(item) { requirementGroups.push(clone(item)); },
+      async getGroup(id) { const item = requirementGroups.find(value => value.id === id); return item ? clone(item) : null; },
+      async removeGroup(id) { requirementGroups = requirementGroups.filter(item => item.id !== id); equipmentRequirements = equipmentRequirements.filter(item => item.requirementGroupId !== id); },
+      async groupsForExercise(exerciseId) { return requirementGroups.filter(item => item.exerciseId === exerciseId).sort((a, b) => a.priority - b.priority).map(clone); },
+      async addRequirement(item) { const index = equipmentRequirements.findIndex(value => value.requirementGroupId === item.requirementGroupId && value.equipmentId === item.equipmentId); if (index >= 0) equipmentRequirements[index] = clone(item); else equipmentRequirements.push(clone(item)); },
+      async getRequirement(id) { const item = equipmentRequirements.find(value => value.id === id); return item ? clone(item) : null; },
+      async updateRequirement(item) { const index = equipmentRequirements.findIndex(value => value.id === item.id); if (index >= 0) equipmentRequirements[index] = clone(item); },
+      async removeRequirement(id) { equipmentRequirements = equipmentRequirements.filter(item => item.id !== id); },
+      async requirementsForGroup(groupId) { return equipmentRequirements.filter(item => item.requirementGroupId === groupId).sort((a, b) => a.createdAt - b.createdAt).map(clone); },
     },
   };
 }

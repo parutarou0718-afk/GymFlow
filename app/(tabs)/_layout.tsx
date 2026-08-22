@@ -63,6 +63,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen name="exercises" options={{ title: 'Exercises' }} />
+      <Tabs.Screen name="taxonomy" options={{ title: 'Taxonomy' }} />
       <Tabs.Screen
         name="settings"
         options={{
