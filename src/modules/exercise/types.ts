@@ -1,0 +1,7 @@
+export type ExerciseStatus = 'active' | 'archived';
+export type MovementPattern = 'squat' | 'hinge' | 'horizontal_push' | 'vertical_push' | 'horizontal_pull' | 'vertical_pull' | 'elbow_flexion' | 'elbow_extension' | 'knee_extension' | 'knee_flexion' | 'hip_extension' | 'hip_abduction' | 'hip_adduction' | 'calf_raise' | 'core' | 'carry' | 'cardio' | 'other';
+export type ExerciseCategory = 'compound' | 'isolation' | 'cardio' | 'mobility' | 'other';
+export type MuscleGroup = 'chest' | 'upper_chest' | 'front_delts' | 'side_delts' | 'rear_delts' | 'lats' | 'upper_back' | 'traps' | 'biceps' | 'triceps' | 'forearms' | 'quads' | 'hamstrings' | 'glutes' | 'adductors' | 'abductors' | 'calves' | 'abs' | 'obliques' | 'erectors' | 'full_body' | 'cardio' | 'other';
+export interface ExerciseMaster { id: string; name: string; aliases: string[]; category: ExerciseCategory; movementPattern: MovementPattern; primaryMuscles: MuscleGroup[]; secondaryMuscles: MuscleGroup[]; description?: string | null; notes?: string | null; status: ExerciseStatus; createdAt: number; updatedAt: number; }
+export type CreateExerciseInput = Pick<ExerciseMaster, 'name' | 'category' | 'movementPattern' | 'primaryMuscles' | 'secondaryMuscles'> & Partial<Pick<ExerciseMaster, 'aliases' | 'description' | 'notes'>>;
+export type UpdateExerciseInput = Partial<Omit<CreateExerciseInput, 'primaryMuscles' | 'secondaryMuscles'> & Pick<ExerciseMaster, 'primaryMuscles' | 'secondaryMuscles'>>;

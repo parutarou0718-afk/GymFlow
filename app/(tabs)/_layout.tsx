@@ -62,6 +62,7 @@ export default function TabLayout() {
           tabBarIcon: ({ focused }) => <TabIcon name="gyms" focused={focused} />,
         }}
       />
+      <Tabs.Screen name="exercises" options={{ title: 'Exercises' }} />
       <Tabs.Screen
         name="settings"
         options={{

@@ -12,6 +12,8 @@ import type { GymFlowStore } from './types';
 import type { Gym } from '../modules/gym';
 import type { Equipment } from '../modules/equipment';
 import type { GymEquipmentInventoryItem } from '../modules/gym-inventory';
+import type { ExerciseMaster } from '../modules/exercise';
+import { exerciseSeeds } from '../modules/exercise/seed';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -150,6 +152,7 @@ export function createWebStore(): GymFlowStore {
   let gyms: Gym[] = [];
   let equipment = clone(seedEquipment);
   let inventory: GymEquipmentInventoryItem[] = [];
+  let exercises: ExerciseMaster[] = clone(exerciseSeeds);
 
   return {
     sessions: {
@@ -289,6 +292,12 @@ export function createWebStore(): GymFlowStore {
       async listByGym(gymId) { return inventory.filter(item => item.gymId === gymId).sort((a, b) => a.createdAt - b.createdAt).map(clone); },
       async update(item) { const index = inventory.findIndex(value => value.id === item.id); if (index >= 0) inventory[index] = clone(item); },
       async removeByGymAndEquipment(gymId, equipmentId) { inventory = inventory.filter(item => item.gymId !== gymId || item.equipmentId !== equipmentId); },
+    },
+    exercises: {
+      async create(item) { exercises.push(clone(item)); }, async get(id) { const item = exercises.find(value => value.id === id); return item ? clone(item) : null; },
+      async list() { return exercises.filter(item => item.status === 'active').sort((a, b) => a.name.localeCompare(b.name)).map(clone); },
+      async search(query) { const normalized = query.trim().toLowerCase(); return exercises.filter(item => item.status === 'active' && (!normalized || [item.name, ...item.aliases].some(value => value.toLowerCase().includes(normalized)))).map(clone); },
+      async update(item) { const index = exercises.findIndex(value => value.id === item.id); if (index >= 0) exercises[index] = clone(item); },
     },
   };
 }

@@ -19,6 +19,8 @@ import type { GymFlowStore } from './types';
 import type { Gym } from '../modules/gym';
 import type { Equipment } from '../modules/equipment';
 import type { GymEquipmentInventoryItem } from '../modules/gym-inventory';
+import type { ExerciseMaster } from '../modules/exercise';
+import { exerciseSeeds } from '../modules/exercise/seed';
 
 // --- Database Singleton ---
 let db: SQLite.SQLiteDatabase | null = null;
@@ -146,6 +148,12 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE RESTRICT,
       UNIQUE(gym_id, equipment_id)
     );
+    CREATE TABLE IF NOT EXISTS exercises (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, aliases_json TEXT NOT NULL DEFAULT '[]',
+      category TEXT NOT NULL, movement_pattern TEXT NOT NULL, primary_muscles_json TEXT NOT NULL,
+      secondary_muscles_json TEXT NOT NULL, description TEXT, notes TEXT, status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
 
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
@@ -156,6 +164,10 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_gym_equipment_gym ON gym_equipment(gym_id);
     CREATE INDEX IF NOT EXISTS idx_gym_equipment_equipment ON gym_equipment(equipment_id);
   `);
+
+  for (const item of exerciseSeeds) {
+    await database.runAsync('INSERT OR IGNORE INTO exercises (id,name,aliases_json,category,movement_pattern,primary_muscles_json,secondary_muscles_json,description,notes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [item.id,item.name,JSON.stringify(item.aliases),item.category,item.movementPattern,JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.description ?? null,item.notes ?? null,item.status,item.createdAt,item.updatedAt]);
+  }
 
   const sessionColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sessions)');
   const columnNames = new Set(sessionColumns.map(column => column.name));
@@ -512,6 +524,7 @@ export async function getDomainEventsForSession(sessionId: UUID): Promise<Workou
 function mapGym(row: any): Gym { return { id: row.id, name: row.name, branchName: row.branch_name, address: row.address, latitude: row.latitude, longitude: row.longitude, externalProvider: row.external_provider, externalPlaceId: row.external_place_id, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapEquipment(row: any): Equipment { return { id: row.id, name: row.name, category: row.category, description: row.description, aliases: JSON.parse(row.aliases_json || '[]'), archived: row.archived === 1, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapInventory(row: any): GymEquipmentInventoryItem { return { id: row.id, gymId: row.gym_id, equipmentId: row.equipment_id, quantity: row.quantity, area: row.area, notes: row.notes, status: row.status, verified: row.verified === 1, verifiedAt: row.verified_at, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapExercise(row: any): ExerciseMaster { return { id: row.id, name: row.name, aliases: JSON.parse(row.aliases_json || '[]'), category: row.category, movementPattern: row.movement_pattern, primaryMuscles: JSON.parse(row.primary_muscles_json), secondaryMuscles: JSON.parse(row.secondary_muscles_json), description: row.description, notes: row.notes, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
 
 export async function createGym(gym: Gym): Promise<void> { const database = await getDatabase(); await database.runAsync('INSERT INTO gyms (id,name,branch_name,address,latitude,longitude,external_provider,external_place_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [gym.id,gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.status,gym.createdAt,gym.updatedAt]); }
 export async function getGym(id: UUID): Promise<Gym | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gyms WHERE id = ?', [id]); return row ? mapGym(row) : null; }
@@ -531,6 +544,11 @@ export async function getInventoryByGymAndEquipment(gymId: UUID, equipmentId: UU
 export async function listInventoryByGym(gymId: UUID): Promise<GymEquipmentInventoryItem[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM gym_equipment WHERE gym_id = ? ORDER BY created_at', [gymId])).map(mapInventory); }
 export async function updateInventoryItem(item: GymEquipmentInventoryItem): Promise<void> { const database = await getDatabase(); await database.runAsync('UPDATE gym_equipment SET quantity=?,area=?,notes=?,status=?,verified=?,verified_at=?,updated_at=? WHERE id=?', [item.quantity,item.area ?? null,item.notes ?? null,item.status,item.verified ? 1 : 0,item.verifiedAt ?? null,item.updatedAt,item.id]); }
 export async function removeInventoryByGymAndEquipment(gymId: UUID, equipmentId: UUID): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM gym_equipment WHERE gym_id = ? AND equipment_id = ?', [gymId,equipmentId]); }
+export async function createExerciseMaster(item: ExerciseMaster): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO exercises (id,name,aliases_json,category,movement_pattern,primary_muscles_json,secondary_muscles_json,description,notes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [item.id,item.name,JSON.stringify(item.aliases),item.category,item.movementPattern,JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.description ?? null,item.notes ?? null,item.status,item.createdAt,item.updatedAt]); }
+export async function getExerciseMaster(id: UUID): Promise<ExerciseMaster | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM exercises WHERE id = ?', [id]); return row ? mapExercise(row) : null; }
+export async function listExerciseMasters(): Promise<ExerciseMaster[]> { return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM exercises WHERE status = 'active' ORDER BY name")).map(mapExercise); }
+export async function searchExerciseMasters(query: string): Promise<ExerciseMaster[]> { const like = `%${query.trim()}%`; return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM exercises WHERE status = 'active' AND (name LIKE ? OR aliases_json LIKE ?) ORDER BY name", [like, like])).map(mapExercise); }
+export async function updateExerciseMaster(item: ExerciseMaster): Promise<void> { await (await getDatabase()).runAsync('UPDATE exercises SET name=?,aliases_json=?,category=?,movement_pattern=?,primary_muscles_json=?,secondary_muscles_json=?,description=?,notes=?,status=?,updated_at=? WHERE id=?', [item.name,JSON.stringify(item.aliases),item.category,item.movementPattern,JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.description ?? null,item.notes ?? null,item.status,item.updatedAt,item.id]); }
 
 // ========================================
 // Store Factory - wraps all functions into a GymFlowStore interface
@@ -575,6 +593,7 @@ export function createStore(): GymFlowStore {
     gyms: { create: createGym, get: getGym, list: listGyms, search: searchGyms, update: updateGym },
     equipment: { create: createEquipment, get: getEquipment, list: listEquipment, search: searchEquipment, update: updateEquipment },
     inventory: { create: createInventoryItem, get: getInventoryItem, getByGymAndEquipment: getInventoryByGymAndEquipment, listByGym: listInventoryByGym, update: updateInventoryItem, removeByGymAndEquipment: removeInventoryByGymAndEquipment },
+    exercises: { create: createExerciseMaster, get: getExerciseMaster, list: listExerciseMasters, search: searchExerciseMasters, update: updateExerciseMaster },
   };
 
   return _store;
