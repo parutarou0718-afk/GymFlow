@@ -1,0 +1,2 @@
+import type { EquipmentCapabilities } from '../gym-inventory/types';
+export function evaluateCapability(capabilities: EquipmentCapabilities | null | undefined, key: 'maxWeightKg' | 'maxResistanceKg', requiredValue: number): 'satisfied' | 'unknown' | 'insufficient' { const value = capabilities?.[key]; return typeof value !== 'number' ? 'unknown' : value >= requiredValue ? 'satisfied' : 'insufficient'; }

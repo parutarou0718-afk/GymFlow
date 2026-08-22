@@ -1,0 +1,15 @@
+import React, { useCallback, useMemo, useState } from 'react';
+import { ScrollView, Text, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useStores } from '../../src/db/stores';
+import { createMatchingService, type ExerciseGymMatchResult } from '../../src/modules/matching';
+import { Button, Card, Input } from '../../src/components/ui';
+import { colors, spacing, typography } from '../../src/lib/theme';
+
+export default function MatchingScreen() {
+  const store = useStores(); const api = useMemo(() => createMatchingService(store), [store]);
+  const [gymId, setGymId] = useState(''); const [exerciseId, setExerciseId] = useState('bench_press'); const [plannedLoad, setPlannedLoad] = useState(''); const [result, setResult] = useState<ExerciseGymMatchResult | null>(null); const [error, setError] = useState('');
+  const loadGym = useCallback(async () => { const gyms = await store.gyms.list(); if (!gymId && gyms[0]) setGymId(gyms[0].id); }, [store, gymId]); useFocusEffect(useCallback(() => { void loadGym(); }, [loadGym]));
+  const match = async () => { try { setError(''); const value = Number(plannedLoad); setResult(await api.matchExerciseToGym({ exerciseId, gymId, includeAlternatives: true, context: Number.isFinite(value) && value > 0 ? { equipmentDemands: [{ capabilityKey: 'maxWeightKg', requiredValue: value, unit: 'kg' }] } : undefined })); } catch (reason) { setResult(null); setError(reason instanceof Error ? reason.message : 'Matching failed'); } };
+  return <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing['4xl'], paddingBottom: spacing['4xl'] }}><Text style={typography.h1}>Gym Matching</Text><Text style={typography.caption}>Development validation only. No Workout replacement is performed.</Text><Input label="Gym ID" value={gymId} onChangeText={setGymId} placeholder="Gym ID" /><Input label="Exercise ID" value={exerciseId} onChangeText={setExerciseId} placeholder="bench_press" /><Input label="Planned load kg (optional)" value={plannedLoad} onChangeText={setPlannedLoad} placeholder="50" /><Button title="Match Exercise" onPress={() => void match()} disabled={!gymId || !exerciseId} />{error ? <Text style={{ color: colors.danger, marginTop: spacing.md }}>{error}</Text> : null}{result ? <View style={{ marginTop: spacing.xl }}><Card><Text style={typography.h2}>{result.status}</Text><Text style={typography.caption}>Selected group: {result.selectedRequirementGroupId || 'bodyweight / none'}</Text>{result.issues.map((item, index) => <Text key={`${item.code}-${index}`} style={typography.caption}>{item.code} · {item.equipmentId || ''}</Text>)}</Card><Text style={[typography.h2, { marginTop: spacing.xl }]}>Alternatives</Text>{result.alternatives.map(item => <Card key={item.exerciseId} style={{ marginTop: spacing.sm }}><Text style={typography.body}>{item.exerciseId} — {item.compatibilityStatus}</Text><Text style={typography.caption}>M5 score {item.candidateScore.toFixed(2)} · {item.candidateReasons.join(', ')}</Text></Card>)}</View> : null}</ScrollView>;
+}
