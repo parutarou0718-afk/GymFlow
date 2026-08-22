@@ -18,6 +18,8 @@ import type { MovementFamily } from '../modules/movement-family';
 import { movementFamilyAssignments, movementFamilySeeds } from '../modules/movement-family/seed';
 import type { EquipmentRequirement, ExerciseMovementFamily, RequirementGroup } from '../modules/exercise-equipment';
 import { equipmentRequirementSeeds, requirementGroupSeeds } from '../modules/exercise-equipment/seed';
+import type { ExerciseSubstitution } from '../modules/exercise-substitution';
+import { substitutionSeeds } from '../modules/exercise-substitution/seed';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -161,6 +163,7 @@ export function createWebStore(): GymFlowStore {
   let assignments: ExerciseMovementFamily[] = movementFamilyAssignments.map(([exerciseId, movementFamilyId, role], index) => ({ id: `web-family-assignment-${index + 1}`, exerciseId, movementFamilyId, role, createdAt: DEMO_NOW, updatedAt: DEMO_NOW }));
   let requirementGroups: RequirementGroup[] = clone(requirementGroupSeeds);
   let equipmentRequirements: EquipmentRequirement[] = clone(equipmentRequirementSeeds);
+  let substitutions: ExerciseSubstitution[] = clone(substitutionSeeds);
 
   return {
     sessions: {
@@ -329,5 +332,6 @@ export function createWebStore(): GymFlowStore {
       async removeRequirement(id) { equipmentRequirements = equipmentRequirements.filter(item => item.id !== id); },
       async requirementsForGroup(groupId) { return equipmentRequirements.filter(item => item.requirementGroupId === groupId).sort((a, b) => a.createdAt - b.createdAt).map(clone); },
     },
+    substitutions: { async create(item) { const duplicate = substitutions.find(value => value.sourceExerciseId === item.sourceExerciseId && value.targetExerciseId === item.targetExerciseId); if (duplicate) throw new Error('Duplicate directional substitution'); substitutions.push(clone(item)); }, async get(id) { const item = substitutions.find(value => value.id === id); return item ? clone(item) : null; }, async listForSource(id) { return substitutions.filter(item => item.sourceExerciseId === id && item.status === 'active').map(clone); }, async listToTarget(id) { return substitutions.filter(item => item.targetExerciseId === id && item.status === 'active').map(clone); }, async update(item) { const index = substitutions.findIndex(value => value.id === item.id); if (index >= 0) substitutions[index] = clone(item); } },
   };
 }

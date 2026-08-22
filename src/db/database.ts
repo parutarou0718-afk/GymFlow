@@ -25,6 +25,8 @@ import type { MovementFamily } from '../modules/movement-family';
 import { movementFamilyAssignments, movementFamilySeeds } from '../modules/movement-family/seed';
 import type { EquipmentRequirement, ExerciseMovementFamily, RequirementGroup } from '../modules/exercise-equipment';
 import { equipmentRequirementSeeds, requirementGroupSeeds } from '../modules/exercise-equipment/seed';
+import type { ExerciseSubstitution } from '../modules/exercise-substitution';
+import { substitutionSeeds } from '../modules/exercise-substitution/seed';
 
 // --- Database Singleton ---
 let db: SQLite.SQLiteDatabase | null = null;
@@ -184,6 +186,13 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE RESTRICT,
       UNIQUE(requirement_group_id, equipment_id)
     );
+    CREATE TABLE IF NOT EXISTS exercise_substitutions (
+      id TEXT PRIMARY KEY, source_exercise_id TEXT NOT NULL, target_exercise_id TEXT NOT NULL,
+      quality TEXT NOT NULL CHECK(quality IN ('excellent','good','acceptable','last_resort')), reason TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived')), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      CHECK(source_exercise_id <> target_exercise_id), FOREIGN KEY(source_exercise_id) REFERENCES exercises(id) ON DELETE RESTRICT,
+      FOREIGN KEY(target_exercise_id) REFERENCES exercises(id) ON DELETE RESTRICT, UNIQUE(source_exercise_id, target_exercise_id)
+    );
 
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
@@ -197,6 +206,7 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_exercise_movement_families_family ON exercise_movement_families(movement_family_id);
     CREATE INDEX IF NOT EXISTS idx_requirement_groups_exercise ON exercise_requirement_groups(exercise_id, priority);
     CREATE INDEX IF NOT EXISTS idx_equipment_requirements_group ON exercise_equipment_requirements(requirement_group_id);
+    CREATE INDEX IF NOT EXISTS idx_substitutions_source ON exercise_substitutions(source_exercise_id, status);
   `);
 
   for (const item of exerciseSeeds) {
@@ -214,6 +224,7 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
   for (const [id, name, category] of nativeEquipmentSeeds) await database.runAsync('INSERT OR IGNORE INTO equipment (id,name,category,aliases_json,archived,created_at,updated_at) VALUES (?,?,?,?,?,?,?)', [id,name,category,'[]',0,Date.now(),Date.now()]);
   for (const item of requirementGroupSeeds) await database.runAsync('INSERT OR IGNORE INTO exercise_requirement_groups (id,exercise_id,name,priority,created_at,updated_at) VALUES (?,?,?,?,?,?)', [item.id,item.exerciseId,item.name ?? null,item.priority,item.createdAt,item.updatedAt]);
   for (const item of equipmentRequirementSeeds) await database.runAsync('INSERT OR IGNORE INTO exercise_equipment_requirements (id,requirement_group_id,equipment_id,requirement_level,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?)', [item.id,item.requirementGroupId,item.equipmentId,item.level,item.notes ?? null,item.createdAt,item.updatedAt]);
+  for (const item of substitutionSeeds) await database.runAsync('INSERT OR IGNORE INTO exercise_substitutions (id,source_exercise_id,target_exercise_id,quality,reason,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', [item.id,item.sourceExerciseId,item.targetExerciseId,item.quality,item.reason ?? null,item.status,item.createdAt,item.updatedAt]);
 
   const sessionColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sessions)');
   const columnNames = new Set(sessionColumns.map(column => column.name));
@@ -621,6 +632,12 @@ export async function getEquipmentRequirement(id: UUID): Promise<EquipmentRequir
 export async function updateEquipmentRequirement(item: EquipmentRequirement): Promise<void> { await (await getDatabase()).runAsync('UPDATE exercise_equipment_requirements SET equipment_id=?,requirement_level=?,notes=?,updated_at=? WHERE id=?', [item.equipmentId,item.level,item.notes ?? null,item.updatedAt,item.id]); }
 export async function removeEquipmentRequirement(id: UUID): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM exercise_equipment_requirements WHERE id=?', [id]); }
 export async function getEquipmentRequirementsForGroup(groupId: UUID): Promise<EquipmentRequirement[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM exercise_equipment_requirements WHERE requirement_group_id=? ORDER BY created_at,id', [groupId])).map(mapEquipmentRequirement); }
+function mapSubstitution(row: any): ExerciseSubstitution { return { id: row.id, sourceExerciseId: row.source_exercise_id, targetExerciseId: row.target_exercise_id, quality: row.quality, reason: row.reason, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
+export async function createExerciseSubstitution(item: ExerciseSubstitution): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO exercise_substitutions (id,source_exercise_id,target_exercise_id,quality,reason,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', [item.id,item.sourceExerciseId,item.targetExerciseId,item.quality,item.reason ?? null,item.status,item.createdAt,item.updatedAt]); }
+export async function getExerciseSubstitution(id: UUID): Promise<ExerciseSubstitution | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM exercise_substitutions WHERE id=?', [id]); return row ? mapSubstitution(row) : null; }
+export async function listExerciseSubstitutionsForSource(id: UUID): Promise<ExerciseSubstitution[]> { return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM exercise_substitutions WHERE source_exercise_id=? AND status='active' ORDER BY created_at", [id])).map(mapSubstitution); }
+export async function listExerciseSubstitutionsToTarget(id: UUID): Promise<ExerciseSubstitution[]> { return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM exercise_substitutions WHERE target_exercise_id=? AND status='active' ORDER BY created_at", [id])).map(mapSubstitution); }
+export async function updateExerciseSubstitution(item: ExerciseSubstitution): Promise<void> { await (await getDatabase()).runAsync('UPDATE exercise_substitutions SET quality=?,reason=?,status=?,updated_at=? WHERE id=?', [item.quality,item.reason ?? null,item.status,item.updatedAt,item.id]); }
 
 // ========================================
 // Store Factory - wraps all functions into a GymFlowStore interface
@@ -672,6 +689,7 @@ export function createStore(): GymFlowStore {
       createGroup: createRequirementGroup, getGroup: getRequirementGroup, removeGroup: removeRequirementGroup, groupsForExercise: getRequirementGroupsForExercise,
       addRequirement: addEquipmentRequirement, getRequirement: getEquipmentRequirement, updateRequirement: updateEquipmentRequirement, removeRequirement: removeEquipmentRequirement, requirementsForGroup: getEquipmentRequirementsForGroup,
     },
+    substitutions: { create: createExerciseSubstitution, get: getExerciseSubstitution, listForSource: listExerciseSubstitutionsForSource, listToTarget: listExerciseSubstitutionsToTarget, update: updateExerciseSubstitution },
   };
 
   return _store;
