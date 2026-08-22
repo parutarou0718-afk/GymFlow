@@ -1,4 +1,4 @@
-export type LifecycleStatus = 'active' | 'paused' | 'completed' | 'discarded';
+export type LifecycleStatus = 'draft' | 'active' | 'paused' | 'completed' | 'discarded';
 
 export interface LifecycleState {
   status: LifecycleStatus;

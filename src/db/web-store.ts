@@ -3,6 +3,7 @@ import { exerciseDB } from '../lib/exercise-db';
 import type {
   CompletedSet,
   SyncQueueItem,
+  WorkoutDomainEvent,
   WorkoutSession,
   WorkoutSnapshot,
   WorkoutTemplate,
@@ -138,6 +139,7 @@ export function createWebStore(): GymFlowStore {
   let templates = clone(seedTemplates);
   let sessions = clone(seedSessions);
   let syncQueue: SyncQueueItem[] = [];
+  let events: WorkoutDomainEvent[] = [];
 
   return {
     sessions: {
@@ -226,6 +228,14 @@ export function createWebStore(): GymFlowStore {
         item.error = error;
         item.lastAttempt = Date.now();
         item.retryCount += 1;
+      },
+    },
+    events: {
+      async record(event) {
+        events.push(clone(event));
+      },
+      async getForSession(sessionId) {
+        return events.filter(event => event.entityId === sessionId).map(clone);
       },
     },
   };

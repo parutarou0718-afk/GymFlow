@@ -13,6 +13,7 @@ import type {
   WorkoutSnapshot,
   SyncQueueItem,
   UserProfile,
+  WorkoutDomainEvent,
 } from '../types';
 import type { GymFlowStore } from './types';
 
@@ -68,8 +69,10 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       status TEXT NOT NULL DEFAULT 'draft',
       started_at INTEGER NOT NULL,
       finished_at INTEGER,
+      completed_at INTEGER,
       duration INTEGER,
       paused_duration INTEGER DEFAULT 0,
+      paused_at INTEGER,
       total_volume REAL DEFAULT 0,
       snapshot TEXT, -- JSON: final snapshot when completed
       pending_sync INTEGER DEFAULT 0,
@@ -112,12 +115,27 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS domain_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      payload TEXT NOT NULL
+    );
+
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
     CREATE INDEX IF NOT EXISTS idx_sessions_pending_sync ON sessions(pending_sync);
     CREATE INDEX IF NOT EXISTS idx_session_exercises_session ON session_exercises(session_id);
     CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_domain_events_entity ON domain_events(entity_id, created_at);
   `);
+
+  const sessionColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sessions)');
+  const columnNames = new Set(sessionColumns.map(column => column.name));
+  if (!columnNames.has('paused_at')) await database.execAsync('ALTER TABLE sessions ADD COLUMN paused_at INTEGER');
+  if (!columnNames.has('completed_at')) await database.execAsync('ALTER TABLE sessions ADD COLUMN completed_at INTEGER');
 }
 
 // ========================================
@@ -176,8 +194,8 @@ export async function createSession(session: WorkoutSession): Promise<void> {
   const now = Date.now();
 
   await database.runAsync(
-    `INSERT INTO sessions (id, template_id, template_name, status, started_at, finished_at, duration, paused_duration, total_volume, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, template_id, template_name, status, started_at, finished_at, completed_at, paused_at, duration, paused_duration, total_volume, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       session.id,
       session.templateId,
@@ -185,6 +203,8 @@ export async function createSession(session: WorkoutSession): Promise<void> {
       session.status,
       session.startedAt,
       session.finishedAt || null,
+      session.completedAt || null,
+      session.pausedAt || null,
       session.duration || null,
       session.pausedDuration || 0,
       session.totalVolume || 0,
@@ -214,7 +234,7 @@ export async function createSession(session: WorkoutSession): Promise<void> {
 export async function updateSessionStatus(
   id: UUID,
   status: WorkoutSession['status'],
-  extra?: Partial<Pick<WorkoutSession, 'finishedAt' | 'duration' | 'totalVolume' | 'pausedDuration'>>
+  extra?: Partial<Pick<WorkoutSession, 'pausedAt' | 'completedAt' | 'finishedAt' | 'duration' | 'totalVolume' | 'pausedDuration'>>
 ): Promise<void> {
   const database = await getDatabase();
   const now = Date.now();
@@ -226,6 +246,8 @@ export async function updateSessionStatus(
     sets.push('finished_at = ?');
     params.push(extra.finishedAt);
   }
+  if (extra?.completedAt !== undefined) { sets.push('completed_at = ?'); params.push(extra.completedAt); }
+  if (extra && Object.prototype.hasOwnProperty.call(extra, 'pausedAt')) { sets.push('paused_at = ?'); params.push(extra.pausedAt ?? null); }
   if (extra?.duration !== undefined) {
     sets.push('duration = ?');
     params.push(extra.duration);
@@ -314,6 +336,8 @@ export async function getSession(id: UUID): Promise<WorkoutSession | null> {
     status: sessionRow.status,
     startedAt: sessionRow.started_at,
     finishedAt: sessionRow.finished_at || undefined,
+    completedAt: sessionRow.completed_at || sessionRow.finished_at || undefined,
+    pausedAt: sessionRow.paused_at || undefined,
     duration: sessionRow.duration || undefined,
     pausedDuration: sessionRow.paused_duration || 0,
     totalVolume: sessionRow.total_volume || undefined,
@@ -421,6 +445,25 @@ export async function getTotalVolume(): Promise<number> {
   return row?.total || 0;
 }
 
+export async function recordDomainEvent(event: WorkoutDomainEvent): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    'INSERT INTO domain_events (id, event_type, entity_type, entity_id, created_at, payload) VALUES (?, ?, ?, ?, ?, ?)',
+    [event.id, event.eventType, event.entityType, event.entityId, event.createdAt, JSON.stringify(event.payload)]
+  );
+}
+
+export async function getDomainEventsForSession(sessionId: UUID): Promise<WorkoutDomainEvent[]> {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<any>(
+    'SELECT * FROM domain_events WHERE entity_id = ? ORDER BY created_at ASC', [sessionId]
+  );
+  return rows.map(row => ({
+    id: row.id, eventType: row.event_type, entityType: row.entity_type,
+    entityId: row.entity_id, createdAt: row.created_at, payload: JSON.parse(row.payload),
+  }));
+}
+
 // ========================================
 // Store Factory - wraps all functions into a GymFlowStore interface
 // ========================================
@@ -452,6 +495,10 @@ export function createStore(): GymFlowStore {
       saveSnapshot,
       getPending: getPendingSyncItems,
       updateStatus: updateSyncStatus,
+    },
+    events: {
+      record: recordDomainEvent,
+      getForSession: getDomainEventsForSession,
     },
   };
 

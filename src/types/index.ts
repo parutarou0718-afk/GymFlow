@@ -49,7 +49,9 @@ export interface TargetSet {
 }
 
 // --- Workout Session ---
-export type SessionStatus = 'draft' | 'active' | 'paused' | 'completed';
+export type SessionStatus = 'draft' | 'active' | 'paused' | 'completed' | 'discarded';
+export type WorkoutSourceType = 'quick' | 'template' | 'generated' | 'adapted' | 'copied';
+export type WorkoutVisibility = 'private' | 'followers' | 'public';
 
 export interface WorkoutSession {
   id: UUID;
@@ -57,7 +59,13 @@ export interface WorkoutSession {
   templateName?: string; // snapshot name
   status: SessionStatus;
   startedAt: number;
+  pausedAt?: number;
+  completedAt?: number;
   finishedAt?: number;
+  sourceType?: WorkoutSourceType;
+  sourceId?: UUID | null;
+  gymId?: UUID | null;
+  visibility?: WorkoutVisibility;
   exercises: SessionExercise[];
   totalVolume?: number; // computed: sum(weight * reps)
   duration?: number; // seconds
@@ -117,4 +125,20 @@ export interface SyncQueueItem {
   createdAt: number;
   lastAttempt?: number;
   error?: string;
+}
+
+export type WorkoutDomainEventType =
+  | 'WORKOUT_STARTED'
+  | 'WORKOUT_PAUSED'
+  | 'WORKOUT_RESUMED'
+  | 'WORKOUT_COMPLETED'
+  | 'WORKOUT_DISCARDED';
+
+export interface WorkoutDomainEvent {
+  id: UUID;
+  eventType: WorkoutDomainEventType;
+  entityType: 'workout';
+  entityId: UUID;
+  createdAt: number;
+  payload: Record<string, unknown>;
 }

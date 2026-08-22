@@ -7,6 +7,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AppState } from 'react-native';
 import { generateId, calculateVolume } from '../lib/utils';
+import { completeSession, pauseSession, resumeSession } from '../lib/workout-lifecycle';
 import { useStores } from '../db/stores';
 import type { WorkoutTemplate, WorkoutSession, WorkoutSnapshot } from '../types';
 
@@ -34,14 +35,12 @@ export function useWorkoutEngine({
   existingSessionId,
   onFinish,
 }: UseWorkoutEngineOptions): UseWorkoutEngineReturn {
-  const { sessions, sync } = useStores();
+  const { sessions, sync, events } = useStores();
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [pausedTime, setPausedTime] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [saving, setSaving] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pauseStartRef = useRef<number | null>(null);
   const appStateRef = useRef(AppState.currentState);
 
   // ── Initialize session ──
@@ -54,14 +53,18 @@ export function useWorkoutEngine({
           setElapsed(Math.floor((Date.now() - s.startedAt) / 1000));
           if (s.status === 'paused') setIsPaused(true);
         }
-      } else if (template) {
+      } else {
         const newSession: WorkoutSession = {
           id: generateId(),
-          templateId: template.id,
-          templateName: template.name,
+          templateId: template?.id || null,
+          templateName: template?.name || 'Quick Workout',
           status: 'active',
           startedAt: Date.now(),
-          exercises: template.exercises.map(ex => ({
+          sourceType: template ? 'template' : 'quick',
+          sourceId: template?.id || null,
+          gymId: null,
+          visibility: 'private',
+          exercises: (template?.exercises || []).map(ex => ({
             id: generateId(),
             exerciseId: ex.exerciseId,
             exercise: ex.exercise,
@@ -76,6 +79,7 @@ export function useWorkoutEngine({
           pausedDuration: 0,
         };
         await sessions.create(newSession);
+        await events.record({ id: generateId(), eventType: 'WORKOUT_STARTED', entityType: 'workout', entityId: newSession.id, createdAt: newSession.startedAt, payload: { sourceType: newSession.sourceType } });
         setSession(newSession);
       }
     };
@@ -153,36 +157,39 @@ export function useWorkoutEngine({
   // ── Pause / Resume ──
   const handlePause = useCallback(async () => {
     if (!session) return;
+    const next = pauseSession(session, Date.now());
+    if (next === session) return;
+    await sessions.updateStatus(session.id, next.status, { pausedAt: next.pausedAt });
+    await events.record({ id: generateId(), eventType: 'WORKOUT_PAUSED', entityType: 'workout', entityId: session.id, createdAt: next.pausedAt!, payload: {} });
+    setSession({ ...session, ...next });
     setIsPaused(true);
-    pauseStartRef.current = Date.now();
-    await sessions.updateStatus(session.id, 'paused');
-  }, [session, sessions]);
+  }, [session, sessions, events]);
 
   const handleResume = useCallback(async () => {
-    if (!session || !pauseStartRef.current) return;
-    const pauseDuration = Math.floor((Date.now() - pauseStartRef.current) / 1000);
-    setPausedTime(prev => prev + pauseDuration);
-    pauseStartRef.current = null;
+    if (!session) return;
+    const next = resumeSession(session, Date.now());
+    if (next === session) return;
+    await sessions.updateStatus(session.id, next.status, { pausedAt: undefined, pausedDuration: next.pausedDuration });
+    await events.record({ id: generateId(), eventType: 'WORKOUT_RESUMED', entityType: 'workout', entityId: session.id, createdAt: Date.now(), payload: {} });
+    setSession({ ...session, ...next });
     setIsPaused(false);
-    await sessions.updateStatus(session.id, 'active', {
-      pausedDuration: (session.pausedDuration || 0) + pauseDuration,
-    });
-  }, [session, sessions]);
+  }, [session, sessions, events]);
 
   // ── Finish workout ──
   const handleFinish = useCallback(async () => {
     if (!session) return;
     setSaving(true);
 
-    const finishedAt = Date.now();
-    const totalDuration = Math.floor((finishedAt - session.startedAt) / 1000);
+    const completed = completeSession(session, Date.now(), session.startedAt);
     const totalVolume = calculateVolume(session.exercises.flatMap(e => e.sets));
 
     await sessions.updateStatus(session.id, 'completed', {
-      finishedAt,
-      duration: totalDuration - pausedTime,
+      finishedAt: completed.completedAt,
+      completedAt: completed.completedAt,
+      pausedAt: undefined,
+      duration: completed.duration,
       totalVolume,
-      pausedDuration: pausedTime,
+      pausedDuration: completed.pausedDuration,
     });
 
     const snapshot: WorkoutSnapshot = {
@@ -190,7 +197,7 @@ export function useWorkoutEngine({
       sessionId: session.id,
       planId: session.templateId,
       startedAt: session.startedAt,
-      finishedAt,
+      finishedAt: completed.completedAt || null,
       exercises: session.exercises.map(ex => ({
         exerciseId: ex.exerciseId,
         order: ex.order,
@@ -201,13 +208,14 @@ export function useWorkoutEngine({
         })),
       })),
       totalVolume,
-      duration: totalDuration - pausedTime,
+      duration: completed.duration || 0,
     };
 
     await sync.saveSnapshot(session.id, snapshot);
+    await events.record({ id: generateId(), eventType: 'WORKOUT_COMPLETED', entityType: 'workout', entityId: session.id, createdAt: completed.completedAt!, payload: { totalVolume } });
     setSaving(false);
     onFinish();
-  }, [session, pausedTime, onFinish, sessions, sync]);
+  }, [session, onFinish, sessions, sync, events]);
 
   // ── Utility ──
   const formatTime = useCallback((seconds: number) => {
