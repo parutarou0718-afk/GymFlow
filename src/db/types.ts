@@ -14,6 +14,9 @@ import type {
   SessionExercise,
   WorkoutDomainEvent,
 } from '../types';
+import type { Gym } from '../modules/gym';
+import type { Equipment } from '../modules/equipment';
+import type { GymEquipmentInventoryItem } from '../modules/gym-inventory';
 
 // ── Session Store ──
 
@@ -63,6 +66,10 @@ export interface DomainEventStore {
   getForSession(sessionId: UUID): Promise<WorkoutDomainEvent[]>;
 }
 
+export interface GymStore { create(gym: Gym): Promise<void>; get(id: UUID): Promise<Gym | null>; list(): Promise<Gym[]>; search(query: string): Promise<Gym[]>; update(gym: Gym): Promise<void>; }
+export interface EquipmentStore { create(equipment: Equipment): Promise<void>; get(id: UUID): Promise<Equipment | null>; list(): Promise<Equipment[]>; search(query: string): Promise<Equipment[]>; update(equipment: Equipment): Promise<void>; }
+export interface InventoryStore { create(item: GymEquipmentInventoryItem): Promise<void>; get(id: UUID): Promise<GymEquipmentInventoryItem | null>; getByGymAndEquipment(gymId: UUID, equipmentId: UUID): Promise<GymEquipmentInventoryItem | null>; listByGym(gymId: UUID): Promise<GymEquipmentInventoryItem[]>; update(item: GymEquipmentInventoryItem): Promise<void>; removeByGymAndEquipment(gymId: UUID, equipmentId: UUID): Promise<void>; }
+
 // ── Composite Store ──
 
 export interface GymFlowStore {
@@ -70,6 +77,9 @@ export interface GymFlowStore {
   templates: TemplateStore;
   sync: SyncStore;
   events: DomainEventStore;
+  gyms: GymStore;
+  equipment: EquipmentStore;
+  inventory: InventoryStore;
 }
 // 注: 此文件为存储层接口定义，所有业务层代码应依赖此接口而非 database.ts 实现。
 // 如需切换存储实现（如 SQLite → Supabase），只需新建实现文件并在 stores.tsx 中更换即可。

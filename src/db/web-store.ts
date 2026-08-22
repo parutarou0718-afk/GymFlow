@@ -9,6 +9,9 @@ import type {
   WorkoutTemplate,
 } from '../types';
 import type { GymFlowStore } from './types';
+import type { Gym } from '../modules/gym';
+import type { Equipment } from '../modules/equipment';
+import type { GymEquipmentInventoryItem } from '../modules/gym-inventory';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -127,6 +130,10 @@ const seedSessions: WorkoutSession[] = [
   },
 ];
 
+const seedEquipment: Equipment[] = [
+  ['Barbell', 'free_weight'], ['Dumbbell', 'free_weight'], ['Flat Bench', 'free_weight'], ['Adjustable Bench', 'free_weight'], ['Power Rack', 'rack'], ['Squat Rack', 'rack'], ['Smith Machine', 'rack'], ['Hack Squat', 'machine'], ['Leg Press', 'machine'], ['Leg Extension', 'machine'], ['Leg Curl', 'machine'], ['Hip Abductor', 'machine'], ['Hip Adductor', 'machine'], ['Calf Raise', 'machine'], ['Chest Press', 'machine'], ['Incline Chest Press', 'machine'], ['Pec Deck', 'machine'], ['Shoulder Press', 'machine'], ['Lat Pulldown', 'cable'], ['Seated Row', 'machine'], ['Cable Station', 'cable'], ['Functional Trainer', 'cable']
+].map(([name, category], index) => ({ id: `web-equipment-${index + 1}`, name, category: category as Equipment['category'], aliases: name === 'Hack Squat' ? ['Hack Squat Machine', '哈克深蹲', '哈克机'] : [], archived: false, createdAt: DEMO_NOW, updatedAt: DEMO_NOW }));
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -140,6 +147,9 @@ export function createWebStore(): GymFlowStore {
   let sessions = clone(seedSessions);
   let syncQueue: SyncQueueItem[] = [];
   let events: WorkoutDomainEvent[] = [];
+  let gyms: Gym[] = [];
+  let equipment = clone(seedEquipment);
+  let inventory: GymEquipmentInventoryItem[] = [];
 
   return {
     sessions: {
@@ -257,6 +267,28 @@ export function createWebStore(): GymFlowStore {
       async getForSession(sessionId) {
         return events.filter(event => event.entityId === sessionId).map(clone);
       },
+    },
+    gyms: {
+      async create(gym) { gyms.push(clone(gym)); },
+      async get(id) { const gym = gyms.find(item => item.id === id); return gym ? clone(gym) : null; },
+      async list() { return [...gyms].sort((a, b) => a.name.localeCompare(b.name)).map(clone); },
+      async search(query) { const normalized = query.trim().toLowerCase(); return gyms.filter(item => !normalized || `${item.name} ${item.branchName ?? ''} ${item.address ?? ''}`.toLowerCase().includes(normalized)).map(clone); },
+      async update(gym) { const index = gyms.findIndex(item => item.id === gym.id); if (index >= 0) gyms[index] = clone(gym); },
+    },
+    equipment: {
+      async create(item) { equipment.push(clone(item)); },
+      async get(id) { const item = equipment.find(value => value.id === id); return item ? clone(item) : null; },
+      async list() { return equipment.filter(item => !item.archived).sort((a, b) => a.name.localeCompare(b.name)).map(clone); },
+      async search(query) { const normalized = query.trim().toLowerCase(); return equipment.filter(item => !item.archived && (!normalized || [item.name, ...item.aliases].some(value => value.toLowerCase().includes(normalized)))).map(clone); },
+      async update(item) { const index = equipment.findIndex(value => value.id === item.id); if (index >= 0) equipment[index] = clone(item); },
+    },
+    inventory: {
+      async create(item) { inventory.push(clone(item)); },
+      async get(id) { const item = inventory.find(value => value.id === id); return item ? clone(item) : null; },
+      async getByGymAndEquipment(gymId, equipmentId) { const item = inventory.find(value => value.gymId === gymId && value.equipmentId === equipmentId); return item ? clone(item) : null; },
+      async listByGym(gymId) { return inventory.filter(item => item.gymId === gymId).sort((a, b) => a.createdAt - b.createdAt).map(clone); },
+      async update(item) { const index = inventory.findIndex(value => value.id === item.id); if (index >= 0) inventory[index] = clone(item); },
+      async removeByGymAndEquipment(gymId, equipmentId) { inventory = inventory.filter(item => item.gymId !== gymId || item.equipmentId !== equipmentId); },
     },
   };
 }
