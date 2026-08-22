@@ -11,6 +11,7 @@ import type {
   WorkoutSnapshot,
   SyncQueueItem,
   CompletedSet,
+  SessionExercise,
   WorkoutDomainEvent,
 } from '../types';
 
@@ -29,6 +30,10 @@ export interface SessionStore {
     setIndex: number,
     data: { weight?: number; reps?: number; completed?: boolean }
   ): Promise<void>;
+  addExercise(sessionId: UUID, exercise: SessionExercise): Promise<void>;
+  removeExercise(sessionId: UUID, exerciseId: UUID): Promise<void>;
+  addSet(exerciseId: UUID, set: CompletedSet): Promise<void>;
+  removeSet(exerciseId: UUID, setIndex: number): Promise<void>;
   getActive(): Promise<WorkoutSession | null>;
   getAll(): Promise<WorkoutSession[]>;
   getTotalWorkouts(): Promise<number>;

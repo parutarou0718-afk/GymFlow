@@ -164,6 +164,26 @@ export function createWebStore(): GymFlowStore {
           }
         }
       },
+      async addExercise(sessionId, exercise) {
+        const session = sessions.find(item => item.id === sessionId);
+        if (session) session.exercises.push(clone(exercise));
+      },
+      async removeExercise(sessionId, exerciseId) {
+        const session = sessions.find(item => item.id === sessionId);
+        if (session) session.exercises = session.exercises.filter(item => item.id !== exerciseId);
+      },
+      async addSet(exerciseId, set) {
+        for (const session of sessions) {
+          const exercise = session.exercises.find(item => item.id === exerciseId);
+          if (exercise) { exercise.sets.push(clone(set)); return; }
+        }
+      },
+      async removeSet(exerciseId, setIndex) {
+        for (const session of sessions) {
+          const exercise = session.exercises.find(item => item.id === exerciseId);
+          if (exercise) { exercise.sets = exercise.sets.filter(set => set.setIndex !== setIndex); return; }
+        }
+      },
       async getActive() {
         const session = sessions.find(item => item.status === 'active' || item.status === 'paused');
         return session ? clone(session) : null;

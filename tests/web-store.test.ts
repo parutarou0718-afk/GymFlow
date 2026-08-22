@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createWebStore } from '../src/db/web-store';
+import { exerciseDB } from '../src/lib/exercise-db';
 
 test('creates seeded templates and completed history data', async () => {
   const store = createWebStore();
@@ -58,4 +59,17 @@ test('writes a pending snapshot to the in-memory sync queue', async () => {
   const pending = await store.sync.getPending();
   assert.equal(pending.length, 1);
   assert.equal(pending[0].sessionId, session.id);
+});
+
+test('persists quick workout exercise and set edits across store reloads', async () => {
+  const store = createWebStore();
+  await store.sessions.create({ id: 'quick-edit', templateId: null, templateName: 'Quick Workout', status: 'active', startedAt: 1, exercises: [] });
+  const benchPress = exerciseDB.getById('bench_press')!;
+
+  await store.sessions.addExercise('quick-edit', { id: 'quick-edit-bench', exerciseId: benchPress.id, exercise: benchPress, order: 0, sets: [] });
+  await store.sessions.addSet('quick-edit-bench', { setIndex: 0, weight: 50, reps: 8, completed: false });
+  await store.sessions.updateSet('quick-edit-bench', 0, { weight: 55, reps: 10, completed: true });
+
+  const restored = await store.sessions.get('quick-edit');
+  assert.deepEqual(restored?.exercises[0].sets[0], { setIndex: 0, weight: 55, reps: 10, completed: true });
 });

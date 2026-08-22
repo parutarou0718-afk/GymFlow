@@ -13,9 +13,12 @@ interface ExerciseBlockProps {
   exercise: SessionExercise;
   onUpdateSet: (exId: string, setIdx: number, field: 'weight' | 'reps', value: number) => void;
   onToggleComplete: (exId: string, setIdx: number) => void;
+  onAddSet: (exId: string) => void;
+  onRemoveSet: (exId: string, setIdx: number) => void;
+  onRemoveExercise: (exId: string) => void;
 }
 
-export function ExerciseBlock({ exercise, onUpdateSet, onToggleComplete }: ExerciseBlockProps) {
+export function ExerciseBlock({ exercise, onUpdateSet, onToggleComplete, onAddSet, onRemoveSet, onRemoveExercise }: ExerciseBlockProps) {
   const completedCount = exercise.sets.filter(s => s.completed).length;
 
   return (
@@ -76,8 +79,13 @@ export function ExerciseBlock({ exercise, onUpdateSet, onToggleComplete }: Exerc
               {set.completed ? '✓' : ''}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => onRemoveSet(exercise.id, idx)} style={{ marginLeft: spacing.xs }}><Text style={{ color: colors.danger, fontSize: 18 }}>×</Text></TouchableOpacity>
         </View>
       ))}
+      <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm }}>
+        <TouchableOpacity onPress={() => onAddSet(exercise.id)}><Text style={{ color: colors.primary, fontWeight: '700' }}>+ Add Set</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => onRemoveExercise(exercise.id)}><Text style={{ color: colors.danger, fontWeight: '700' }}>Remove Exercise</Text></TouchableOpacity>
+      </View>
     </Card>
   );
 }

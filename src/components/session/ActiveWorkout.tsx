@@ -3,12 +3,13 @@
 // Thin glue layer: wires engine + components
 // ========================================
 
-import React from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
 import { colors, spacing, radius, typography } from '../../lib/theme';
 import { useWorkoutEngine } from '../../hooks/useWorkoutEngine';
 import { ExerciseBlock } from './ExerciseBlock';
 import { PauseOverlay } from './PauseOverlay';
+import { ExercisePicker } from '../template/ExercisePicker';
 import type { WorkoutTemplate } from '../../types';
 
 interface ActiveWorkoutProps {
@@ -19,8 +20,13 @@ interface ActiveWorkoutProps {
 
 export function ActiveWorkout({ template, existingSessionId, onFinish }: ActiveWorkoutProps) {
   const engine = useWorkoutEngine({ template, existingSessionId, onFinish });
+  const [pickingExercise, setPickingExercise] = useState(false);
 
   if (!engine.session) return null;
+
+  if (pickingExercise) {
+    return <ExercisePicker selectedIds={engine.session.exercises.map(exercise => exercise.exerciseId)} onSelect={async exercise => { await engine.addExercise(exercise); setPickingExercise(false); }} onClose={() => setPickingExercise(false)} />;
+  }
 
   // Paused state → full overlay
   if (engine.isPaused) {
@@ -51,8 +57,11 @@ export function ActiveWorkout({ template, existingSessionId, onFinish }: ActiveW
           <TouchableOpacity onPress={engine.handlePause} style={styles.iconButton}>
             <Text style={{ fontSize: 22 }}>⏸</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={engine.handleFinish} style={styles.finishButton}>
+          <TouchableOpacity disabled={engine.saving} onPress={() => Alert.alert('Finish Workout', 'Complete this workout?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Finish', onPress: () => void engine.handleFinish() }])} style={styles.finishButton}>
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Finish</Text>
+          </TouchableOpacity>
+          <TouchableOpacity disabled={engine.saving} onPress={() => Alert.alert('Discard Workout', 'Discard this workout? It will not appear in history.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Discard', style: 'destructive', onPress: () => void engine.handleDiscard() }])}>
+            <Text style={{ color: colors.danger, fontWeight: '700', fontSize: 13 }}>Discard</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -66,9 +75,18 @@ export function ActiveWorkout({ template, existingSessionId, onFinish }: ActiveW
             exercise={item}
             onUpdateSet={engine.handleSetUpdate}
             onToggleComplete={engine.toggleSetComplete}
+            onAddSet={engine.addSet}
+            onRemoveSet={engine.removeSet}
+            onRemoveExercise={id => {
+              const exercise = engine.session?.exercises.find(item => item.id === id);
+              if (!exercise?.sets.some(set => set.completed || set.weight > 0 || set.reps > 0)) { void engine.removeExercise(id); return; }
+              Alert.alert('Remove Exercise', 'This exercise has recorded sets. Remove it?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => void engine.removeExercise(id) }]);
+            }}
           />
         )}
         contentContainerStyle={styles.list}
+        ListEmptyComponent={<View style={styles.empty}><Text style={typography.bodySmall}>No exercises yet. Add one to start your quick workout.</Text></View>}
+        ListFooterComponent={<TouchableOpacity style={styles.addExercise} onPress={() => setPickingExercise(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>+ Add Exercise</Text></TouchableOpacity>}
       />
     </View>
   );
@@ -121,4 +139,6 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing['4xl'],
   },
+  empty: { alignItems: 'center', paddingVertical: spacing['4xl'] },
+  addExercise: { alignItems: 'center', padding: spacing.lg, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md },
 });

@@ -445,6 +445,26 @@ export async function getTotalVolume(): Promise<number> {
   return row?.total || 0;
 }
 
+export async function addSessionExercise(sessionId: UUID, exercise: SessionExercise): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync('INSERT INTO session_exercises (id, session_id, exercise_id, exercise_order, notes) VALUES (?, ?, ?, ?, ?)', [exercise.id, sessionId, exercise.exerciseId, exercise.order, exercise.notes || null]);
+}
+
+export async function removeSessionExercise(sessionId: UUID, exerciseId: UUID): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync('DELETE FROM session_exercises WHERE id = ? AND session_id = ?', [exerciseId, sessionId]);
+}
+
+export async function addSessionSet(exerciseId: UUID, set: CompletedSet): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync('INSERT INTO completed_sets (session_exercise_id, set_index, weight, reps, completed) VALUES (?, ?, ?, ?, ?)', [exerciseId, set.setIndex, set.weight, set.reps, set.completed ? 1 : 0]);
+}
+
+export async function removeSessionSet(exerciseId: UUID, setIndex: number): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync('DELETE FROM completed_sets WHERE session_exercise_id = ? AND set_index = ?', [exerciseId, setIndex]);
+}
+
 export async function recordDomainEvent(event: WorkoutDomainEvent): Promise<void> {
   const database = await getDatabase();
   await database.runAsync(
@@ -479,6 +499,10 @@ export function createStore(): GymFlowStore {
       get: getSession,
       updateStatus: updateSessionStatus,
       updateSet,
+      addExercise: addSessionExercise,
+      removeExercise: removeSessionExercise,
+      addSet: addSessionSet,
+      removeSet: removeSessionSet,
       getActive: getActiveSession,
       getAll: getAllSessions,
       getTotalWorkouts,

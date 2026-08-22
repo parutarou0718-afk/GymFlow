@@ -9,7 +9,7 @@ import { AppState } from 'react-native';
 import { generateId, calculateVolume } from '../lib/utils';
 import { completeSession, pauseSession, resumeSession } from '../lib/workout-lifecycle';
 import { useStores } from '../db/stores';
-import type { WorkoutTemplate, WorkoutSession, WorkoutSnapshot } from '../types';
+import type { Exercise, WorkoutTemplate, WorkoutSession, WorkoutSnapshot } from '../types';
 
 export interface UseWorkoutEngineOptions {
   template?: WorkoutTemplate;
@@ -24,9 +24,14 @@ export interface UseWorkoutEngineReturn {
   saving: boolean;
   handleSetUpdate: (exerciseId: string, setIndex: number, field: 'weight' | 'reps', value: number) => Promise<void>;
   toggleSetComplete: (exerciseId: string, setIndex: number) => Promise<void>;
+  addExercise: (exercise: Exercise) => Promise<void>;
+  removeExercise: (exerciseId: string) => Promise<void>;
+  addSet: (exerciseId: string) => Promise<void>;
+  removeSet: (exerciseId: string, setIndex: number) => Promise<void>;
   handlePause: () => Promise<void>;
   handleResume: () => Promise<void>;
   handleFinish: () => Promise<void>;
+  handleDiscard: () => Promise<void>;
   formatTime: (seconds: number) => string;
 }
 
@@ -154,6 +159,34 @@ export function useWorkoutEngine({
     [session, sessions]
   );
 
+  const addExercise = useCallback(async (exercise: Exercise) => {
+    if (!session || saving) return;
+    const item = { id: generateId(), exerciseId: exercise.id, exercise, order: session.exercises.length, sets: [] };
+    await sessions.addExercise(session.id, item);
+    setSession({ ...session, exercises: [...session.exercises, item] });
+  }, [session, sessions]);
+
+  const removeExercise = useCallback(async (exerciseId: string) => {
+    if (!session) return;
+    await sessions.removeExercise(session.id, exerciseId);
+    setSession({ ...session, exercises: session.exercises.filter(exercise => exercise.id !== exerciseId) });
+  }, [session, sessions]);
+
+  const addSet = useCallback(async (exerciseId: string) => {
+    if (!session) return;
+    const exercise = session.exercises.find(item => item.id === exerciseId);
+    if (!exercise) return;
+    const set = { setIndex: exercise.sets.length, weight: 0, reps: 0, completed: false };
+    await sessions.addSet(exerciseId, set);
+    setSession({ ...session, exercises: session.exercises.map(item => item.id === exerciseId ? { ...item, sets: [...item.sets, set] } : item) });
+  }, [session, sessions]);
+
+  const removeSet = useCallback(async (exerciseId: string, setIndex: number) => {
+    if (!session) return;
+    await sessions.removeSet(exerciseId, setIndex);
+    setSession({ ...session, exercises: session.exercises.map(item => item.id === exerciseId ? { ...item, sets: item.sets.filter(set => set.setIndex !== setIndex) } : item) });
+  }, [session, sessions]);
+
   // ── Pause / Resume ──
   const handlePause = useCallback(async () => {
     if (!session) return;
@@ -215,7 +248,16 @@ export function useWorkoutEngine({
     await events.record({ id: generateId(), eventType: 'WORKOUT_COMPLETED', entityType: 'workout', entityId: session.id, createdAt: completed.completedAt!, payload: { totalVolume } });
     setSaving(false);
     onFinish();
-  }, [session, onFinish, sessions, sync, events]);
+  }, [session, saving, onFinish, sessions, sync, events]);
+
+  const handleDiscard = useCallback(async () => {
+    if (!session || saving) return;
+    setSaving(true);
+    await sessions.updateStatus(session.id, 'discarded');
+    await events.record({ id: generateId(), eventType: 'WORKOUT_DISCARDED', entityType: 'workout', entityId: session.id, createdAt: Date.now(), payload: {} });
+    setSaving(false);
+    onFinish();
+  }, [session, saving, sessions, events, onFinish]);
 
   // ── Utility ──
   const formatTime = useCallback((seconds: number) => {
@@ -231,9 +273,14 @@ export function useWorkoutEngine({
     saving,
     handleSetUpdate,
     toggleSetComplete,
+    addExercise,
+    removeExercise,
+    addSet,
+    removeSet,
     handlePause,
     handleResume,
     handleFinish,
+    handleDiscard,
     formatTime,
   };
 }
