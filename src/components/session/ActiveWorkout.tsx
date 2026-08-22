@@ -10,17 +10,24 @@ import { useWorkoutEngine } from '../../hooks/useWorkoutEngine';
 import { ExerciseBlock } from './ExerciseBlock';
 import { PauseOverlay } from './PauseOverlay';
 import { ExercisePicker } from '../template/ExercisePicker';
-import type { WorkoutTemplate } from '../../types';
 
 interface ActiveWorkoutProps {
-  template?: WorkoutTemplate;
+  templateId?: string;
   existingSessionId?: string;
   onFinish: () => void;
+  onLeave: () => void;
 }
 
-export function ActiveWorkout({ template, existingSessionId, onFinish }: ActiveWorkoutProps) {
-  const engine = useWorkoutEngine({ template, existingSessionId, onFinish });
+export function ActiveWorkout({ templateId, existingSessionId, onFinish, onLeave }: ActiveWorkoutProps) {
+  const engine = useWorkoutEngine({ templateId, existingSessionId, onFinish });
   const [pickingExercise, setPickingExercise] = useState(false);
+  const requestFinishWorkout = () => {
+    if (engine.saving) return;
+    Alert.alert('Finish Workout', 'Complete this workout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Finish', onPress: () => void engine.handleFinish() },
+    ]);
+  };
 
   if (!engine.session) return null;
 
@@ -35,7 +42,8 @@ export function ActiveWorkout({ template, existingSessionId, onFinish }: ActiveW
         elapsed={engine.elapsed}
         saving={engine.saving}
         onResume={engine.handleResume}
-        onFinish={engine.handleFinish}
+        onFinish={requestFinishWorkout}
+        onLeave={onLeave}
         formatTime={engine.formatTime}
       />
     );
@@ -54,10 +62,13 @@ export function ActiveWorkout({ template, existingSessionId, onFinish }: ActiveW
           </Text>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity onPress={onLeave} style={styles.leaveButton}>
+            <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 13 }}>Home</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={engine.handlePause} style={styles.iconButton}>
             <Text style={{ fontSize: 22 }}>⏸</Text>
           </TouchableOpacity>
-          <TouchableOpacity disabled={engine.saving} onPress={() => Alert.alert('Finish Workout', 'Complete this workout?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Finish', onPress: () => void engine.handleFinish() }])} style={styles.finishButton}>
+          <TouchableOpacity disabled={engine.saving} onPress={requestFinishWorkout} style={styles.finishButton}>
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Finish</Text>
           </TouchableOpacity>
           <TouchableOpacity disabled={engine.saving} onPress={() => Alert.alert('Discard Workout', 'Discard this workout? It will not appear in history.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Discard', style: 'destructive', onPress: () => void engine.handleDiscard() }])}>
@@ -138,6 +149,11 @@ const styles = StyleSheet.create({
   list: {
     padding: spacing.lg,
     paddingBottom: spacing['4xl'],
+  },
+  leaveButton: {
+    paddingHorizontal: spacing.md,
+    height: 44,
+    justifyContent: 'center',
   },
   empty: { alignItems: 'center', paddingVertical: spacing['4xl'] },
   addExercise: { alignItems: 'center', padding: spacing.lg, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md },

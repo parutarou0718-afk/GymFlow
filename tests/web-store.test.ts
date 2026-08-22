@@ -73,3 +73,23 @@ test('persists quick workout exercise and set edits across store reloads', async
   const restored = await store.sessions.get('quick-edit');
   assert.deepEqual(restored?.exercises[0].sets[0], { setIndex: 0, weight: 55, reps: 10, completed: true });
 });
+
+test('keeps active and paused quick workouts resumable without writing lifecycle events', async () => {
+  const store = createWebStore();
+  const benchPress = exerciseDB.getById('bench_press')!;
+  const session = { id: 'quick-leave-home', templateId: null, templateName: 'Quick Workout', status: 'active' as const, startedAt: 1, exercises: [] };
+  await store.sessions.create(session);
+  await store.sessions.addExercise(session.id, { id: 'quick-leave-home-bench', exerciseId: benchPress.id, exercise: benchPress, order: 0, sets: [] });
+  await store.sessions.addSet('quick-leave-home-bench', { setIndex: 0, weight: 60, reps: 8, completed: true });
+
+  const active = await store.sessions.getActive();
+  assert.equal(active?.status, 'active');
+  assert.deepEqual(active?.exercises[0].sets[0], { setIndex: 0, weight: 60, reps: 8, completed: true });
+  assert.equal((await store.events.getForSession(session.id)).length, 0);
+
+  await store.sessions.updateStatus(session.id, 'paused', { pausedAt: 10 });
+  const paused = await store.sessions.getActive();
+  assert.equal(paused?.status, 'paused');
+  assert.equal(paused?.pausedAt, 10);
+  assert.equal((await store.events.getForSession(session.id)).length, 0);
+});

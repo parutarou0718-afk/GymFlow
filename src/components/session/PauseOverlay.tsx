@@ -12,10 +12,11 @@ interface PauseOverlayProps {
   saving: boolean;
   onResume: () => void;
   onFinish: () => void;
+  onLeave: () => void;
   formatTime: (seconds: number) => string;
 }
 
-export function PauseOverlay({ elapsed, saving, onResume, onFinish, formatTime }: PauseOverlayProps) {
+export function PauseOverlay({ elapsed, saving, onResume, onFinish, onLeave, formatTime }: PauseOverlayProps) {
   return (
     <View style={styles.overlay}>
       <Text style={styles.icon}>⏸</Text>
@@ -37,6 +38,13 @@ export function PauseOverlay({ elapsed, saving, onResume, onFinish, formatTime }
         size="sm"
         style={{ marginTop: spacing.md, minWidth: 200 }}
         loading={saving}
+      />
+      <Button
+        title="Back to Home"
+        onPress={onLeave}
+        variant="ghost"
+        size="sm"
+        style={{ marginTop: spacing.md, minWidth: 200 }}
       />
     </View>
   );

@@ -2,7 +2,7 @@
 // GymFlow - Workout History Components
 // ========================================
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,9 @@ import {
 import { colors, spacing, radius, typography, shadows } from '../../lib/theme';
 import { Card, Badge, EmptyState, Divider, Metric } from '../ui';
 import { useStores } from '../../db/stores';
+import { createWorkoutService } from '../../modules/workout';
 import { formatDate, formatShortDate, formatDuration, formatVolume, calculateVolume } from '../../lib/utils';
-import type { WorkoutSession, SessionExercise, CompletedSet } from '../../types';
+import type { WorkoutSession } from '../../modules/workout';
 import { exerciseDB } from '../../lib/exercise-db';
 
 interface HistoryListProps {
@@ -124,13 +125,14 @@ interface SessionDetailProps {
 }
 
 export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
-  const { sessions } = useStores();
+  const store = useStores();
+  const workoutService = useMemo(() => createWorkoutService(store), [store]);
   const [session, setSession] = React.useState<WorkoutSession | null>(null);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     const load = async () => {
-      const s = await sessions.get(sessionId);
+      const s = await workoutService.getWorkoutHistoryDetail(sessionId);
       if (s) {
         // Enrich with exercise data
         s.exercises = s.exercises.map(ex => ({
@@ -142,7 +144,7 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
       setLoading(false);
     };
     load();
-  }, [sessionId, sessions]);
+  }, [sessionId, workoutService]);
 
   if (loading) return null;
   if (!session) return <Text style={{ padding: spacing.lg, color: colors.textSecondary }}>Session not found</Text>;

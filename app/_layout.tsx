@@ -4,22 +4,15 @@
 
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { colors } from '../src/lib/theme';
 import { useEffect } from 'react';
 import { StoreProvider } from '../src/db/stores';
+import { bootstrapStorage } from '../src/db/storage-bootstrap';
 
 export default function RootLayout() {
   useEffect(() => {
-    if (Platform.OS === 'web') return;
-
-    void Promise.all([
-      import('../src/db/database'),
-      import('../src/lib/supabase'),
-    ]).then(async ([database, supabase]) => {
-      await database.getDatabase();
-      await supabase.processSyncQueue();
-    }).catch(console.error);
+    void bootstrapStorage().catch(console.error);
   }, []);
 
   return (

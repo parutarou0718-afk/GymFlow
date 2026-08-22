@@ -4,6 +4,7 @@
     "strict": true,
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
+    "moduleSuffixes": [".web", ".native", ""],
     "esModuleInterop": true,
     "skipLibCheck": true
   },

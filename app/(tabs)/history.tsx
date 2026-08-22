@@ -2,7 +2,7 @@
 // GymFlow - History Screen
 // ========================================
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,20 +12,22 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography, shadows } from '../../src/lib/theme';
 import { HistoryList } from '../../src/components/history';
 import { useStores } from '../../src/db/stores';
-import type { WorkoutSession } from '../../src/types';
+import { createWorkoutService } from '../../src/modules/workout';
+import type { WorkoutSession } from '../../src/modules/workout';
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const { sessions } = useStores();
+  const store = useStores();
+  const workoutService = useMemo(() => createWorkoutService(store), [store]);
   const [sessionList, setSessionList] = useState<WorkoutSession[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadSessions = useCallback(async () => {
     setLoading(true);
-    const s = await sessions.getAll();
+    const s = await workoutService.getWorkoutHistory();
     setSessionList(s);
     setLoading(false);
-  }, []);
+  }, [workoutService]);
 
   useFocusEffect(
     useCallback(() => {

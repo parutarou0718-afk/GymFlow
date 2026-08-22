@@ -9,3 +9,28 @@ test('history components access sessions through the store instead of SQLite', a
   assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/db\/database['"]/);
   assert.match(source, /useStores/);
 });
+
+test('active workout provides a Home exit without routing through lifecycle actions', async () => {
+  const [screen, workout] = await Promise.all([
+    readFile(resolve(process.cwd(), 'app/active-workout.tsx'), 'utf8'),
+    readFile(resolve(process.cwd(), 'src/components/session/ActiveWorkout.tsx'), 'utf8'),
+  ]);
+
+  assert.match(screen, /onLeave=\{\(\) => router\.replace\('\/'\)\}/);
+  assert.match(workout, /onLeave: \(\) => void;/);
+  assert.match(workout, /onLeave=\{onLeave\}/);
+  assert.match(workout, /onPress=\{onLeave\}/);
+});
+
+test('web store and bootstrap boundaries do not reference the native database', async () => {
+  const [factory, bootstrap, supabase] = await Promise.all([
+    readFile(resolve(process.cwd(), 'src/db/store-factory.web.ts'), 'utf8'),
+    readFile(resolve(process.cwd(), 'src/db/storage-bootstrap.web.ts'), 'utf8'),
+    readFile(resolve(process.cwd(), 'src/lib/supabase.web.ts'), 'utf8'),
+  ]);
+
+  assert.match(factory, /createWebStore/);
+  assert.doesNotMatch(factory, /database/);
+  assert.doesNotMatch(bootstrap, /database/);
+  assert.doesNotMatch(supabase, /database/);
+});
