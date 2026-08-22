@@ -45,5 +45,6 @@ export interface CreateEquipmentRequirementInput {
 export interface ExerciseExecutionProfile {
   exercise: ExerciseMaster;
   movementFamilies: MovementFamily[];
+  movementFamilyAssignments: Array<ExerciseMovementFamily & { movementFamily: MovementFamily }>;
   requirementGroups: Array<RequirementGroup & { requirements: EquipmentRequirement[] }>;
 }

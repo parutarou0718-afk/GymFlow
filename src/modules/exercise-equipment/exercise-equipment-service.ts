@@ -52,8 +52,9 @@ export function createExerciseEquipmentService(store: Pick<GymFlowStore, 'taxono
       const exercise = await store.exercises.get(exerciseId);
       if (!exercise) throw new Error(`Exercise not found: ${exerciseId}`);
       const movementFamilies = await store.taxonomy.familiesForExercise(exerciseId);
+      const assignments = await store.taxonomy.assignmentsForExercise(exerciseId);
       const groups = await store.taxonomy.groupsForExercise(exerciseId);
-      return { exercise, movementFamilies, requirementGroups: await Promise.all(groups.map(async group => ({ ...group, requirements: await store.taxonomy.requirementsForGroup(group.id) }))) };
+      return { exercise, movementFamilies, movementFamilyAssignments: assignments.flatMap(assignment => { const movementFamily = movementFamilies.find(family => family.id === assignment.movementFamilyId); return movementFamily ? [{ ...assignment, movementFamily }] : []; }), requirementGroups: await Promise.all(groups.map(async group => ({ ...group, requirements: await store.taxonomy.requirementsForGroup(group.id) }))) };
     },
   };
 }

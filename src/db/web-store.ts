@@ -315,6 +315,7 @@ export function createWebStore(): GymFlowStore {
       async updateFamily(item) { const index = movementFamilies.findIndex(value => value.id === item.id); if (index >= 0) movementFamilies[index] = clone(item); },
       async assign(item) { const index = assignments.findIndex(value => value.exerciseId === item.exerciseId && value.movementFamilyId === item.movementFamilyId); if (index >= 0) assignments[index] = clone(item); else assignments.push(clone(item)); },
       async removeAssignment(exerciseId, movementFamilyId) { assignments = assignments.filter(item => item.exerciseId !== exerciseId || item.movementFamilyId !== movementFamilyId); },
+      async assignmentsForExercise(exerciseId) { return assignments.filter(item => item.exerciseId === exerciseId).map(clone); },
       async familiesForExercise(exerciseId) { const ids = assignments.filter(item => item.exerciseId === exerciseId).map(item => item.movementFamilyId); return movementFamilies.filter(item => ids.includes(item.id) && item.status === 'active').map(clone); },
       async exercisesForFamily(familyId) { const ids = assignments.filter(item => item.movementFamilyId === familyId).map(item => item.exerciseId); return exercises.filter(item => ids.includes(item.id) && item.status === 'active').map(clone); },
       async familiesForMuscle(muscle) { return movementFamilies.filter(item => item.status === 'active' && [...item.primaryMuscles, ...item.secondaryMuscles].includes(muscle as never)).map(clone); },

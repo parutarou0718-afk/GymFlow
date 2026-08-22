@@ -3,7 +3,7 @@ import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useStores } from '../../src/db/stores';
 import { createMovementFamilyService, type MovementFamily } from '../../src/modules/movement-family';
-import { createExerciseEquipmentService, type ExerciseExecutionProfile } from '../../src/modules/exercise-equipment';
+import { createExerciseEquipmentService, type ExerciseExecutionProfile, type RequirementLevel } from '../../src/modules/exercise-equipment';
 import { Button, Card, Input } from '../../src/components/ui';
 import { colors, spacing, typography } from '../../src/lib/theme';
 
@@ -20,6 +20,11 @@ export default function TaxonomyScreen() {
   const create = async () => { if (!name.trim()) return; const family = await familiesApi.createMovementFamily({ name, primaryMuscles: ['other'], secondaryMuscles: [] }); setName(''); setSelectedId(family.id); await load(); };
   const assign = async () => { if (!selectedId) return; await executionApi.assignExerciseToMovementFamily(exerciseId, selectedId, 'secondary'); await load(); };
   const addRequirement = async () => { const group = await executionApi.createRequirementGroup(exerciseId, { name: 'Development equipment option', priority: 99 }); await executionApi.addEquipmentRequirement(group.id, { equipmentId: 'web-equipment-2', level: 'preferred' }); await load(); };
+  const updateRole = async (familyId: string, role: 'primary' | 'secondary') => { await executionApi.assignExerciseToMovementFamily(exerciseId, familyId, role); await load(); };
+  const removeAssignment = async (familyId: string) => { await executionApi.removeExerciseFromMovementFamily(exerciseId, familyId); await load(); };
+  const removeGroup = async (groupId: string) => { await executionApi.removeRequirementGroup(groupId); await load(); };
+  const updateLevel = async (requirementId: string, level: RequirementLevel) => { await executionApi.updateEquipmentRequirement(requirementId, { level }); await load(); };
+  const removeRequirement = async (requirementId: string) => { await executionApi.removeEquipmentRequirement(requirementId); await load(); };
   return <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing['4xl'], paddingBottom: spacing['4xl'] }}>
     <Text style={typography.h1}>Exercise Taxonomy</Text>
     <Text style={typography.caption}>Development validation for movement families and equipment requirements.</Text>
@@ -28,6 +33,10 @@ export default function TaxonomyScreen() {
     <Button title="Create Family" onPress={() => void create()} disabled={!name.trim()} />
     <View style={{ marginTop: spacing.xl, gap: spacing.sm }}>{items.map(item => <Card key={item.id}><TouchableOpacity onPress={() => setSelectedId(item.id)}><Text style={[typography.body, { color: selectedId === item.id ? colors.primary : colors.text }]}>{item.name}</Text><Text style={typography.caption}>{item.primaryMuscles.join(', ')} · {item.aliases.join(', ') || 'no aliases'}</Text></TouchableOpacity><TouchableOpacity onPress={() => void familiesApi.archiveMovementFamily(item.id).then(load)}><Text style={{ color: colors.danger, marginTop: spacing.sm }}>Archive</Text></TouchableOpacity></Card>)}</View>
     <View style={{ marginTop: spacing.xl }}><Button title="Assign selected family to Bench Press" onPress={() => void assign()} disabled={!selectedId} /><Button title="Add preferred dumbbell option to Bench Press" onPress={() => void addRequirement()} /></View>
-    {profile && <View style={{ marginTop: spacing.xl }}><Text style={typography.h2}>{profile.exercise.name} execution profile</Text><Text style={typography.caption}>Families: {profile.movementFamilies.map(item => item.name).join(', ') || 'none'}</Text>{profile.requirementGroups.map(group => <Card key={group.id} style={{ marginTop: spacing.sm }}><Text style={typography.body}>{group.name || 'Equipment option'} (OR)</Text><Text style={typography.caption}>{group.requirements.map(item => `${item.equipmentId}: ${item.level}`).join(' + ') || 'No equipment requirements'}</Text></Card>)}</View>}
+    {profile && <View style={{ marginTop: spacing.xl }}><Text style={typography.h2}>{profile.exercise.name} execution profile</Text>
+      <Text style={[typography.body, { marginTop: spacing.md }]}>Movement Family assignments</Text>
+      {profile.movementFamilyAssignments.map(assignment => <Card key={assignment.id} style={{ marginTop: spacing.sm }}><Text style={typography.body}>{assignment.movementFamily.name}</Text><Text style={typography.caption}>Current role: {assignment.role}</Text><View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm }}><TouchableOpacity onPress={() => void updateRole(assignment.movementFamilyId, 'primary')}><Text style={{ color: colors.primary }}>Primary</Text></TouchableOpacity><TouchableOpacity onPress={() => void updateRole(assignment.movementFamilyId, 'secondary')}><Text style={{ color: colors.primary }}>Secondary</Text></TouchableOpacity><TouchableOpacity onPress={() => void removeAssignment(assignment.movementFamilyId)}><Text style={{ color: colors.danger }}>Remove</Text></TouchableOpacity></View></Card>)}
+      <Text style={[typography.body, { marginTop: spacing.xl }]}>Requirement groups (OR)</Text>
+      {profile.requirementGroups.map(group => <Card key={group.id} style={{ marginTop: spacing.sm }}><View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md }}><View><Text style={typography.body}>{group.name || 'Equipment option'}</Text><Text style={typography.caption}>Priority {group.priority}; requirements are AND</Text></View><TouchableOpacity onPress={() => void removeGroup(group.id)}><Text style={{ color: colors.danger }}>Delete group</Text></TouchableOpacity></View>{group.requirements.map(item => <View key={item.id} style={{ marginTop: spacing.sm }}><Text style={typography.caption}>{item.equipmentId} — {item.level}</Text><View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.xs }}>{(['required', 'preferred', 'optional'] as RequirementLevel[]).map(level => <TouchableOpacity key={level} onPress={() => void updateLevel(item.id, level)}><Text style={{ color: item.level === level ? colors.primary : colors.text }}>{level}</Text></TouchableOpacity>)}<TouchableOpacity onPress={() => void removeRequirement(item.id)}><Text style={{ color: colors.danger }}>Remove</Text></TouchableOpacity></View></View>)}</Card>)}</View>}
   </ScrollView>;
 }

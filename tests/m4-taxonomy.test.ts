@@ -29,7 +29,17 @@ test('M4 taxonomy keeps family assignments and OR groups with AND requirements',
   await execution.addEquipmentRequirement(groupB.id, { equipmentId: 'web-equipment-7', level: 'optional' });
   const profile = await execution.getExerciseExecutionProfile('bench_press');
   assert.ok(profile.movementFamilies.some(item => item.id === family.id));
+  assert.equal(profile.movementFamilyAssignments.find(item => item.movementFamilyId === family.id)?.role, 'primary');
   assert.ok(profile.requirementGroups.some(item => item.id === groupA.id && item.requirements.length === 2));
   assert.ok(profile.requirementGroups.some(item => item.id === groupB.id && item.requirements.length === 1));
   await assert.rejects(() => execution.addEquipmentRequirement(groupA.id, { equipmentId: 'missing', level: 'required' }));
+  await execution.assignExerciseToMovementFamily('bench_press', family.id, 'secondary');
+  await execution.updateEquipmentRequirement((await execution.getEquipmentRequirementsForGroup(groupA.id))[0].id, { level: 'optional' });
+  await execution.removeEquipmentRequirement((await execution.getEquipmentRequirementsForGroup(groupB.id))[0].id);
+  await execution.removeRequirementGroup(groupB.id);
+  await execution.removeExerciseFromMovementFamily('bench_press', family.id);
+  const reloaded = await execution.getExerciseExecutionProfile('bench_press');
+  assert.equal(reloaded.movementFamilyAssignments.some(item => item.movementFamilyId === family.id), false);
+  assert.equal(reloaded.requirementGroups.some(item => item.id === groupB.id), false);
+  assert.equal((await execution.getEquipmentRequirementsForGroup(groupA.id))[0].level, 'optional');
 });
