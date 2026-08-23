@@ -2,19 +2,20 @@
 // GymFlow - Template Form Screen (Modal)
 // ========================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { colors } from '../src/lib/theme';
 import { TemplateForm } from '../src/components/template/TemplateForm';
 import { useStores } from '../src/db/stores';
-import type { WorkoutTemplate } from '../src/types';
+import { createProgramService, type Program } from '../src/modules/program';
 
 export default function TemplateFormScreen() {
   const router = useRouter();
-  const { templates } = useStores();
+  const store = useStores();
+  const programs = useMemo(() => createProgramService(store), [store]);
   const params = useLocalSearchParams<{ templateId?: string; templateData?: string }>();
-  const [initial, setInitial] = useState<WorkoutTemplate | undefined>();
+  const [initial, setInitial] = useState<Program | undefined>();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,19 +24,19 @@ export default function TemplateFormScreen() {
         // Coming from copy
         setInitial(JSON.parse(params.templateData));
       } else if (params.templateId) {
-        const t = await templates.get(params.templateId);
+        const t = await programs.getProgram(params.templateId);
         setInitial(t || undefined);
       }
       setLoading(false);
     };
     load();
-  }, [params.templateId, params.templateData, templates]);
+  }, [params.templateId, params.templateData, programs]);
 
-  const handleSave = async (template: WorkoutTemplate) => {
+  const handleSave = async (template: Program) => {
     if (initial) {
-      await templates.update(template);
+      await programs.updateProgram(template);
     } else {
-      await templates.create(template);
+      await programs.createProgram(template);
     }
     router.back();
   };

@@ -2,7 +2,7 @@
 // GymFlow - Plans (Template Management)
 // ========================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,20 +15,21 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography, shadows } from '../../src/lib/theme';
 import { Card, Button, EmptyState, Badge } from '../../src/components/ui';
 import { useStores } from '../../src/db/stores';
-import type { WorkoutTemplate } from '../../src/types';
+import { createProgramService, type Program } from '../../src/modules/program';
 
 export default function PlansScreen() {
   const router = useRouter();
-  const { templates } = useStores();
-  const [templateList, setTemplateList] = useState<WorkoutTemplate[]>([]);
+  const store = useStores();
+  const programs = useMemo(() => createProgramService(store), [store]);
+  const [templateList, setTemplateList] = useState<Program[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadTemplates = useCallback(async () => {
     setLoading(true);
-    const t = await templates.getAll();
+    const t = await programs.listPrograms();
     setTemplateList(t);
     setLoading(false);
-  }, []);
+  }, [programs]);
 
   useFocusEffect(
     useCallback(() => {
@@ -40,15 +41,15 @@ export default function PlansScreen() {
     router.push({ pathname: '/template-form' as any });
   };
 
-  const handleEdit = (template: WorkoutTemplate) => {
+  const handleEdit = (template: Program) => {
     router.push({ pathname: '/template-form' as any, params: { templateId: template.id } });
   };
 
-  const handleStart = (template: WorkoutTemplate) => {
+  const handleStart = (template: Program) => {
     router.push({ pathname: '/active-workout' as any, params: { templateId: template.id } });
   };
 
-  const handleDelete = (template: WorkoutTemplate) => {
+  const handleDelete = (template: Program) => {
     Alert.alert(
       'Delete Template',
       `Delete "${template.name}"? This cannot be undone.`,
@@ -58,7 +59,7 @@ export default function PlansScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await templates.delete(template.id);
+            await programs.deleteProgram(template.id);
             loadTemplates();
           },
         },
@@ -66,8 +67,8 @@ export default function PlansScreen() {
     );
   };
 
-  const handleCopy = (template: WorkoutTemplate) => {
-    const copy: WorkoutTemplate = {
+  const handleCopy = (template: Program) => {
+    const copy: Program = {
       ...template,
       id: `${Date.now()}-${Math.random()}`,
       name: `${template.name} (Copy)`,
