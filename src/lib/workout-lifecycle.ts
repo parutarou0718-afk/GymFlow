@@ -19,7 +19,7 @@ export function resumeSession(state: LifecycleState, now: number): LifecycleStat
     ...state,
     status: 'active',
     pausedAt: undefined,
-    pausedDuration: (state.pausedDuration ?? 0) + now - state.pausedAt,
+    pausedDuration: (state.pausedDuration ?? 0) + (now - state.pausedAt) / 1000,
   };
 }
 
@@ -30,6 +30,6 @@ export function completeSession(state: LifecycleState, now: number, startedAt: n
     ...resumed,
     status: 'completed',
     completedAt: now,
-    duration: Math.max(0, now - startedAt - pausedDuration),
+    duration: Math.max(0, Math.floor((now - startedAt) / 1000 - pausedDuration)),
   };
 }
