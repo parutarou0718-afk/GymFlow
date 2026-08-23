@@ -65,6 +65,7 @@ export default function TabLayout() {
       <Tabs.Screen name="exercises" options={{ title: 'Exercises' }} />
       <Tabs.Screen name="taxonomy" options={{ title: 'Taxonomy' }} />
       <Tabs.Screen name="matching" options={{ title: 'Matching' }} />
+      <Tabs.Screen name="program-matching" options={{ title: 'Program Matching' }} />
       <Tabs.Screen
         name="settings"
         options={{

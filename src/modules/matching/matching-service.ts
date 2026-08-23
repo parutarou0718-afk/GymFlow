@@ -1,6 +1,7 @@
 import type { GymFlowStore } from '../../db/types'; import { createCandidateResolutionService } from '../candidate-resolution'; import type { CompatibilityIssue, ExerciseGymCompatibilityStatus, ExerciseGymMatchResult, MatchExerciseToGymInput, RequirementGroupEvaluation } from './types';
 const rank: Record<ExerciseGymCompatibilityStatus, number> = { executable: 3, executable_with_warning: 2, not_executable: 1 };
-export function createMatchingService(store: Pick<GymFlowStore, 'gyms' | 'inventory' | 'exercises' | 'taxonomy' | 'substitutions'>) {
+export interface MatchingService { matchExerciseToGym(input: MatchExerciseToGymInput): Promise<ExerciseGymMatchResult>; }
+export function createMatchingService(store: Pick<GymFlowStore, 'gyms' | 'inventory' | 'exercises' | 'taxonomy' | 'substitutions'>): MatchingService {
   const evaluate = async (exerciseId: string, gymId: string, input: MatchExerciseToGymInput): Promise<Omit<ExerciseGymMatchResult, 'alternatives'>> => {
     const [exercise, gym] = await Promise.all([store.exercises.get(exerciseId), store.gyms.get(gymId)]); if (!exercise) throw new Error(`Exercise not found: ${exerciseId}`); if (!gym || gym.status === 'closed') throw new Error(`Gym unavailable: ${gymId}`);
     const groups = await store.taxonomy.groupsForExercise(exerciseId); if (!groups.length) return { exerciseId, gymId, status: 'executable', selectedRequirementGroupId: null, groupEvaluations: [], issues: [] };
