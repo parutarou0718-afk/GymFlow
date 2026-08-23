@@ -20,6 +20,8 @@ import type { EquipmentRequirement, ExerciseMovementFamily, RequirementGroup } f
 import { equipmentRequirementSeeds, requirementGroupSeeds } from '../modules/exercise-equipment/seed';
 import type { ExerciseSubstitution } from '../modules/exercise-substitution';
 import { substitutionSeeds } from '../modules/exercise-substitution/seed';
+import type { UserProfile } from '../modules/user';
+import { createDefaultUser } from '../modules/user';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -164,6 +166,7 @@ export function createWebStore(): GymFlowStore {
   let requirementGroups: RequirementGroup[] = clone(requirementGroupSeeds);
   let equipmentRequirements: EquipmentRequirement[] = clone(equipmentRequirementSeeds);
   let substitutions: ExerciseSubstitution[] = clone(substitutionSeeds);
+  let users: UserProfile[] = [createDefaultUser(DEMO_NOW)];
 
   return {
     sessions: {
@@ -333,5 +336,11 @@ export function createWebStore(): GymFlowStore {
       async requirementsForGroup(groupId) { return equipmentRequirements.filter(item => item.requirementGroupId === groupId).sort((a, b) => a.createdAt - b.createdAt).map(clone); },
     },
     substitutions: { async create(item) { const duplicate = substitutions.find(value => value.sourceExerciseId === item.sourceExerciseId && value.targetExerciseId === item.targetExerciseId); if (duplicate) throw new Error('Duplicate directional substitution'); substitutions.push(clone(item)); }, async get(id) { const item = substitutions.find(value => value.id === id); return item ? clone(item) : null; }, async listForSource(id) { return substitutions.filter(item => item.sourceExerciseId === id && item.status === 'active').map(clone); }, async listToTarget(id) { return substitutions.filter(item => item.targetExerciseId === id && item.status === 'active').map(clone); }, async update(item) { const index = substitutions.findIndex(value => value.id === item.id); if (index >= 0) substitutions[index] = clone(item); } },
+    users: {
+      async create(user) { if (users.some(item => item.id === user.id)) return; users.push(clone(user)); },
+      async get(id) { const user = users.find(item => item.id === id); return user ? clone(user) : null; },
+      async list() { return users.filter(item => item.status === 'active').sort((a, b) => a.displayName.localeCompare(b.displayName)).map(clone); },
+      async update(user) { const index = users.findIndex(item => item.id === user.id); if (index >= 0) users[index] = clone(user); },
+    },
   };
 }

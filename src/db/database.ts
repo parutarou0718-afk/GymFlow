@@ -12,7 +12,6 @@ import type {
   CompletedSet,
   WorkoutSnapshot,
   SyncQueueItem,
-  UserProfile,
   WorkoutDomainEvent,
 } from '../types';
 import type { GymFlowStore } from './types';
@@ -27,6 +26,8 @@ import type { EquipmentRequirement, ExerciseMovementFamily, RequirementGroup } f
 import { equipmentRequirementSeeds, requirementGroupSeeds } from '../modules/exercise-equipment/seed';
 import type { ExerciseSubstitution } from '../modules/exercise-substitution';
 import { substitutionSeeds } from '../modules/exercise-substitution/seed';
+import type { UserProfile } from '../modules/user';
+import { createDefaultUser } from '../modules/user';
 
 // --- Database Singleton ---
 let db: SQLite.SQLiteDatabase | null = null;
@@ -53,13 +54,17 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
 
     INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '${SCHEMA_VERSION}');
 
-    -- User profile (local cache)
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
-      email TEXT NOT NULL,
-      name TEXT NOT NULL,
-      avatar TEXT,
-      created_at INTEGER NOT NULL
+      display_name TEXT NOT NULL,
+      avatar_uri TEXT,
+      experience_level TEXT NOT NULL,
+      training_goals_json TEXT NOT NULL,
+      preferences_json TEXT NOT NULL,
+      privacy_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     );
 
     -- Workout templates (plans)
@@ -232,6 +237,72 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
   if (!columnNames.has('completed_at')) await database.execAsync('ALTER TABLE sessions ADD COLUMN completed_at INTEGER');
   const inventoryColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(gym_equipment)');
   if (!new Set(inventoryColumns.map(column => column.name)).has('capabilities_json')) await database.execAsync("ALTER TABLE gym_equipment ADD COLUMN capabilities_json TEXT");
+
+  const userColumns = new Set((await database.getAllAsync<{ name: string }>('PRAGMA table_info(users)')).map(column => column.name));
+  const userMigrations: Array<[string, string]> = [
+    ['display_name', "TEXT NOT NULL DEFAULT ''"],
+    ['avatar_uri', 'TEXT'],
+    ['experience_level', "TEXT NOT NULL DEFAULT 'unknown'"],
+    ['training_goals_json', "TEXT NOT NULL DEFAULT '[]'"],
+    ['preferences_json', `TEXT NOT NULL DEFAULT '{"preferredUnits":"metric","preferredTrainingIntent":"unknown","defaultRestSeconds":null,"preferMachines":null,"preferFreeWeights":null}'`],
+    ['privacy_json', `TEXT NOT NULL DEFAULT '{"profileVisibility":"private","workoutVisibilityDefault":"private","programVisibilityDefault":"private"}'`],
+    ['status', "TEXT NOT NULL DEFAULT 'active'"],
+    ['updated_at', 'INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [name, definition] of userMigrations) {
+    if (!userColumns.has(name)) await database.execAsync(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
+  }
+  const migratedUserColumns = new Set((await database.getAllAsync<{ name: string }>('PRAGMA table_info(users)')).map(column => column.name));
+  if (migratedUserColumns.has('name')) await database.runAsync("UPDATE users SET display_name = name WHERE display_name = '' OR display_name IS NULL");
+  if (migratedUserColumns.has('avatar')) await database.runAsync('UPDATE users SET avatar_uri = avatar WHERE avatar_uri IS NULL');
+
+  const defaultUser = createDefaultUser(Date.now());
+  await database.runAsync(
+    'INSERT OR IGNORE INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    [defaultUser.id, defaultUser.displayName, defaultUser.avatarUri ?? null, defaultUser.experienceLevel, JSON.stringify(defaultUser.trainingGoals), JSON.stringify(defaultUser.preferences), JSON.stringify(defaultUser.privacy), defaultUser.status, defaultUser.createdAt, defaultUser.updatedAt],
+  );
+}
+
+// ========================================
+// User Profile CRUD
+// ========================================
+
+function mapUser(row: any): UserProfile {
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    avatarUri: row.avatar_uri ?? null,
+    experienceLevel: row.experience_level,
+    trainingGoals: JSON.parse(row.training_goals_json),
+    preferences: JSON.parse(row.preferences_json),
+    privacy: JSON.parse(row.privacy_json),
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  } as UserProfile;
+}
+
+export async function createUser(user: UserProfile): Promise<void> {
+  await (await getDatabase()).runAsync(
+    'INSERT INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    [user.id, user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.status, user.createdAt, user.updatedAt],
+  );
+}
+
+export async function getUser(id: UUID): Promise<UserProfile | null> {
+  const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM users WHERE id = ?', [id]);
+  return row ? mapUser(row) : null;
+}
+
+export async function listUsers(): Promise<UserProfile[]> {
+  return (await (await getDatabase()).getAllAsync<any>("SELECT * FROM users WHERE status = 'active' ORDER BY display_name, id")).map(mapUser);
+}
+
+export async function updateUser(user: UserProfile): Promise<void> {
+  await (await getDatabase()).runAsync(
+    'UPDATE users SET display_name=?,avatar_uri=?,experience_level=?,training_goals_json=?,preferences_json=?,privacy_json=?,status=?,updated_at=? WHERE id=?',
+    [user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.status, user.updatedAt, user.id],
+  );
 }
 
 // ========================================
@@ -690,6 +761,7 @@ export function createStore(): GymFlowStore {
       addRequirement: addEquipmentRequirement, getRequirement: getEquipmentRequirement, updateRequirement: updateEquipmentRequirement, removeRequirement: removeEquipmentRequirement, requirementsForGroup: getEquipmentRequirementsForGroup,
     },
     substitutions: { create: createExerciseSubstitution, get: getExerciseSubstitution, listForSource: listExerciseSubstitutionsForSource, listToTarget: listExerciseSubstitutionsToTarget, update: updateExerciseSubstitution },
+    users: { create: createUser, get: getUser, list: listUsers, update: updateUser },
   };
 
   return _store;
