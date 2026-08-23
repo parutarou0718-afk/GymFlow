@@ -287,6 +287,39 @@ export function createWebStore(): GymFlowStore {
         return events.filter(event => event.entityId === sessionId).map(clone);
       },
     },
+    workoutCompletion: {
+      async complete(input) {
+        const nextSessions = clone(sessions);
+        const session = nextSessions.find(item => item.id === input.sessionId);
+        if (!session) throw new Error(`Workout session not found: ${input.sessionId}`);
+        Object.assign(session, {
+          status: 'completed',
+          finishedAt: input.completedAt,
+          completedAt: input.completedAt,
+          pausedAt: undefined,
+          duration: input.duration,
+          pausedDuration: input.pausedDuration,
+          totalVolume: input.totalVolume,
+        });
+
+        const nextSyncQueue = syncQueue
+          .filter(item => item.sessionId !== input.sessionId)
+          .map(clone);
+        nextSyncQueue.push({
+          id: createQueueId(),
+          sessionId: input.sessionId,
+          snapshot: clone(input.snapshot),
+          status: 'pending',
+          retryCount: 0,
+          createdAt: Date.now(),
+        });
+        const nextEvents = [...events.map(clone), clone(input.event)];
+
+        sessions = nextSessions;
+        syncQueue = nextSyncQueue;
+        events = nextEvents;
+      },
+    },
     gyms: {
       async create(gym) { gyms.push(clone(gym)); },
       async get(id) { const gym = gyms.find(item => item.id === id); return gym ? clone(gym) : null; },

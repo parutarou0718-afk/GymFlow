@@ -2,7 +2,7 @@
 // GymFlow - Home Dashboard
 // ========================================
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,26 +17,29 @@ import { Card, Button, Metric, EmptyState, SectionHeader } from '../../src/compo
 import { formatDuration, formatVolume, formatShortDate } from '../../src/lib/utils';
 import { useStores } from '../../src/db/stores';
 import type { WorkoutSession, WorkoutTemplate } from '../../src/types';
+import { createWorkoutService } from '../../src/modules/workout';
+import { createProgramService } from '../../src/modules/program';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { sessions, templates } = useStores();
+  const store = useStores();
+  const workoutApi = useMemo(() => createWorkoutService(store), [store]);
+  const programApi = useMemo(() => createProgramService(store), [store]);
   const [activeSession, setActiveSession] = useState<WorkoutSession | null>(null);
   const [recentTemplates, setRecentTemplates] = useState<WorkoutTemplate[]>([]);
   const [stats, setStats] = useState({ workouts: 0, volume: 0 });
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
-    const [active, templs, workouts, volume] = await Promise.all([
-      sessions.getActive(),
-      templates.getAll(),
-      sessions.getTotalWorkouts(),
-      sessions.getTotalVolume(),
+    const [active, templs, workoutStats] = await Promise.all([
+      workoutApi.getActiveWorkouts(),
+      programApi.listPrograms(),
+      workoutApi.getWorkoutStats(),
     ]);
-    setActiveSession(active);
+    setActiveSession(active[0] ?? null);
     setRecentTemplates(templs.slice(0, 5));
-    setStats({ workouts, volume });
-  }, [sessions, templates]);
+    setStats(workoutStats);
+  }, [programApi, workoutApi]);
 
   useFocusEffect(
     useCallback(() => {

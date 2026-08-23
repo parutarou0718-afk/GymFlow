@@ -14,7 +14,7 @@ import type {
   SyncQueueItem,
   WorkoutDomainEvent,
 } from '../types';
-import type { GymFlowStore } from './types';
+import type { GymFlowStore, WorkoutCompletionInput } from './types';
 import type { Gym } from '../modules/gym';
 import type { Equipment } from '../modules/equipment';
 import type { GymEquipmentInventoryItem } from '../modules/gym-inventory';
@@ -29,6 +29,7 @@ import { substitutionSeeds } from '../modules/exercise-substitution/seed';
 import type { UserProfile } from '../modules/user';
 import { createDefaultUser } from '../modules/user';
 import type { UserGymRelationship } from '../modules/user-gym';
+import { applySqliteMigrationLedger } from './migrations';
 
 // --- Database Singleton ---
 let db: SQLite.SQLiteDatabase | null = null;
@@ -41,8 +42,6 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 }
 
 // --- Schema ---
-const SCHEMA_VERSION = 1;
-
 async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void> {
   await database.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -53,7 +52,7 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       value TEXT NOT NULL
     );
 
-    INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '${SCHEMA_VERSION}');
+    INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '0');
 
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -228,6 +227,13 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_user_gyms_recent ON user_gyms(user_id, last_visited_at);
   `);
 
+  await applySqliteMigrationLedger({
+    getFirstAsync: <T>(query: string, params: unknown[] = []) => database.getFirstAsync<T>(query, params as SQLite.SQLiteBindParams),
+    getAllAsync: <T>(query: string, params: unknown[] = []) => database.getAllAsync<T>(query, params as SQLite.SQLiteBindParams),
+    execAsync: query => database.execAsync(query),
+    runAsync: (query: string, params: unknown[] = []) => database.runAsync(query, params as SQLite.SQLiteBindParams),
+  });
+
   for (const item of exerciseSeeds) {
     await database.runAsync('INSERT OR IGNORE INTO exercises (id,name,aliases_json,category,movement_pattern,primary_muscles_json,secondary_muscles_json,description,notes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [item.id,item.name,JSON.stringify(item.aliases),item.category,item.movementPattern,JSON.stringify(item.primaryMuscles),JSON.stringify(item.secondaryMuscles),item.description ?? null,item.notes ?? null,item.status,item.createdAt,item.updatedAt]);
   }
@@ -244,31 +250,6 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
   for (const item of requirementGroupSeeds) await database.runAsync('INSERT OR IGNORE INTO exercise_requirement_groups (id,exercise_id,name,priority,created_at,updated_at) VALUES (?,?,?,?,?,?)', [item.id,item.exerciseId,item.name ?? null,item.priority,item.createdAt,item.updatedAt]);
   for (const item of equipmentRequirementSeeds) await database.runAsync('INSERT OR IGNORE INTO exercise_equipment_requirements (id,requirement_group_id,equipment_id,requirement_level,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?)', [item.id,item.requirementGroupId,item.equipmentId,item.level,item.notes ?? null,item.createdAt,item.updatedAt]);
   for (const item of substitutionSeeds) await database.runAsync('INSERT OR IGNORE INTO exercise_substitutions (id,source_exercise_id,target_exercise_id,quality,reason,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', [item.id,item.sourceExerciseId,item.targetExerciseId,item.quality,item.reason ?? null,item.status,item.createdAt,item.updatedAt]);
-
-  const sessionColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sessions)');
-  const columnNames = new Set(sessionColumns.map(column => column.name));
-  if (!columnNames.has('paused_at')) await database.execAsync('ALTER TABLE sessions ADD COLUMN paused_at INTEGER');
-  if (!columnNames.has('completed_at')) await database.execAsync('ALTER TABLE sessions ADD COLUMN completed_at INTEGER');
-  const inventoryColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(gym_equipment)');
-  if (!new Set(inventoryColumns.map(column => column.name)).has('capabilities_json')) await database.execAsync("ALTER TABLE gym_equipment ADD COLUMN capabilities_json TEXT");
-
-  const userColumns = new Set((await database.getAllAsync<{ name: string }>('PRAGMA table_info(users)')).map(column => column.name));
-  const userMigrations: Array<[string, string]> = [
-    ['display_name', "TEXT NOT NULL DEFAULT ''"],
-    ['avatar_uri', 'TEXT'],
-    ['experience_level', "TEXT NOT NULL DEFAULT 'unknown'"],
-    ['training_goals_json', "TEXT NOT NULL DEFAULT '[]'"],
-    ['preferences_json', `TEXT NOT NULL DEFAULT '{"preferredUnits":"metric","preferredTrainingIntent":"unknown","defaultRestSeconds":null,"preferMachines":null,"preferFreeWeights":null}'`],
-    ['privacy_json', `TEXT NOT NULL DEFAULT '{"profileVisibility":"private","workoutVisibilityDefault":"private","programVisibilityDefault":"private"}'`],
-    ['status', "TEXT NOT NULL DEFAULT 'active'"],
-    ['updated_at', 'INTEGER NOT NULL DEFAULT 0'],
-  ];
-  for (const [name, definition] of userMigrations) {
-    if (!userColumns.has(name)) await database.execAsync(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
-  }
-  const migratedUserColumns = new Set((await database.getAllAsync<{ name: string }>('PRAGMA table_info(users)')).map(column => column.name));
-  if (migratedUserColumns.has('name')) await database.runAsync("UPDATE users SET display_name = name WHERE display_name = '' OR display_name IS NULL");
-  if (migratedUserColumns.has('avatar')) await database.runAsync('UPDATE users SET avatar_uri = avatar WHERE avatar_uri IS NULL');
 
   const defaultUser = createDefaultUser(Date.now());
   await database.runAsync(
@@ -602,6 +583,37 @@ export async function saveSnapshot(sessionId: UUID, snapshot: WorkoutSnapshot): 
   );
 }
 
+export async function completeWorkoutAtomically(input: WorkoutCompletionInput): Promise<void> {
+  const database = await getDatabase();
+  const snapshotJson = JSON.stringify(input.snapshot);
+  const eventPayload = JSON.stringify(input.event.payload);
+  const queueId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  const now = Date.now();
+
+  await database.withExclusiveTransactionAsync(async transaction => {
+    await transaction.runAsync(
+      `UPDATE sessions
+       SET status = 'completed', finished_at = ?, completed_at = ?, paused_at = NULL,
+           duration = ?, paused_duration = ?, total_volume = ?, updated_at = ?
+       WHERE id = ?`,
+      [input.completedAt, input.completedAt, input.duration, input.pausedDuration, input.totalVolume, now, input.sessionId],
+    );
+    await transaction.runAsync(
+      'UPDATE sessions SET snapshot = ?, pending_sync = 1 WHERE id = ?',
+      [snapshotJson, input.sessionId],
+    );
+    await transaction.runAsync(
+      `INSERT OR REPLACE INTO sync_queue (id, session_id, snapshot, status, retry_count, created_at)
+       VALUES (?, ?, ?, 'pending', 0, ?)`,
+      [queueId, input.sessionId, snapshotJson, now],
+    );
+    await transaction.runAsync(
+      'INSERT INTO domain_events (id, event_type, entity_type, entity_id, created_at, payload) VALUES (?, ?, ?, ?, ?, ?)',
+      [input.event.id, input.event.eventType, input.event.entityType, input.event.entityId, input.event.createdAt, eventPayload],
+    );
+  });
+}
+
 export async function getPendingSyncItems(): Promise<SyncQueueItem[]> {
   const database = await getDatabase();
   const rows = await database.getAllAsync<any>(
@@ -796,6 +808,7 @@ export function createStore(): GymFlowStore {
       record: recordDomainEvent,
       getForSession: getDomainEventsForSession,
     },
+    workoutCompletion: { complete: completeWorkoutAtomically },
     gyms: { create: createGym, get: getGym, list: listGyms, search: searchGyms, update: updateGym },
     equipment: { create: createEquipment, get: getEquipment, list: listEquipment, search: searchEquipment, update: updateEquipment },
     inventory: { create: createInventoryItem, get: getInventoryItem, getByGymAndEquipment: getInventoryByGymAndEquipment, listByGym: listInventoryByGym, update: updateInventoryItem, removeByGymAndEquipment: removeInventoryByGymAndEquipment },

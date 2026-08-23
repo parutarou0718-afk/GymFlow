@@ -25,6 +25,28 @@ test('WorkoutService creates, edits, restores, and completes a quick workout thr
   assert.equal((await store.events.getForSession(started.id)).filter(event => event.eventType === 'WORKOUT_COMPLETED').length, 1);
 });
 
+for (const failureStage of ['session', 'snapshot', 'event'] as const) {
+  test(`WorkoutService leaves no partial completion when atomic ${failureStage} persistence fails`, async () => {
+    const store = createWebStore() as ReturnType<typeof createWebStore> & {
+      workoutCompletion: { complete: () => Promise<void> };
+    };
+    const service = createWorkoutService(store);
+    const started = await service.startQuickWorkout();
+    store.workoutCompletion = {
+      complete: async () => {
+        throw new Error(`${failureStage} persistence failed`);
+      },
+    };
+
+    await assert.rejects(() => service.finishWorkout(started.id), /persistence failed/);
+
+    assert.equal((await service.getWorkout(started.id))?.status, 'active');
+    assert.equal((await service.getWorkoutHistory()).some(item => item.id === started.id), false);
+    assert.equal((await store.sync.getPending()).some(item => item.sessionId === started.id), false);
+    assert.equal((await store.events.getForSession(started.id)).some(event => event.eventType === 'WORKOUT_COMPLETED'), false);
+  });
+}
+
 test('useWorkoutEngine coordinates through the Workout module public API', async () => {
   const source = await readFile(resolve(process.cwd(), 'src/hooks/useWorkoutEngine.ts'), 'utf8');
 

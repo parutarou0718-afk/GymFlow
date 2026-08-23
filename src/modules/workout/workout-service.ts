@@ -21,6 +21,7 @@ export interface WorkoutService {
   updateSet(sessionId: string, exerciseId: string, setIndex: number, data: SetUpdate): Promise<WorkoutSession>;
   getWorkoutHistory(): Promise<WorkoutSession[]>;
   getWorkoutHistoryDetail(sessionId: string): Promise<WorkoutSession | null>;
+  getWorkoutStats(): Promise<{ workouts: number; volume: number }>;
 }
 
 export function createWorkoutService(store: WorkoutStore): WorkoutService {
@@ -101,14 +102,6 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       const session = await getRequiredWorkout(sessionId);
       const completed = completeSession(session, Date.now(), session.startedAt);
       const totalVolume = calculateVolume(session.exercises.flatMap(exercise => exercise.sets));
-      await store.sessions.updateStatus(sessionId, 'completed', {
-        finishedAt: completed.completedAt,
-        completedAt: completed.completedAt,
-        pausedAt: undefined,
-        duration: completed.duration,
-        totalVolume,
-        pausedDuration: completed.pausedDuration,
-      });
       const snapshot: WorkoutSnapshot = {
         schemaVersion: 1,
         sessionId,
@@ -123,8 +116,22 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
         totalVolume,
         duration: completed.duration ?? 0,
       };
-      await store.sync.saveSnapshot(sessionId, snapshot);
-      await store.events.record({ id: generateId(), eventType: 'WORKOUT_COMPLETED', entityType: 'workout', entityId: sessionId, createdAt: completed.completedAt!, payload: { totalVolume } });
+      await store.workoutCompletion.complete({
+        sessionId,
+        completedAt: completed.completedAt!,
+        duration: completed.duration ?? 0,
+        pausedDuration: completed.pausedDuration ?? 0,
+        totalVolume,
+        snapshot,
+        event: {
+          id: generateId(),
+          eventType: 'WORKOUT_COMPLETED',
+          entityType: 'workout',
+          entityId: sessionId,
+          createdAt: completed.completedAt!,
+          payload: { totalVolume },
+        },
+      });
       return reload(sessionId);
     },
     async discardWorkout(sessionId) {
@@ -165,5 +172,12 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
     },
     getWorkoutHistory: () => store.sessions.getAll(),
     getWorkoutHistoryDetail: sessionId => store.sessions.get(sessionId),
+    async getWorkoutStats() {
+      const [workouts, volume] = await Promise.all([
+        store.sessions.getTotalWorkouts(),
+        store.sessions.getTotalVolume(),
+      ]);
+      return { workouts, volume };
+    },
   };
 }

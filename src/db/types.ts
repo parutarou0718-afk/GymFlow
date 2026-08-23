@@ -72,6 +72,20 @@ export interface DomainEventStore {
   getForSession(sessionId: UUID): Promise<WorkoutDomainEvent[]>;
 }
 
+export interface WorkoutCompletionInput {
+  sessionId: UUID;
+  completedAt: number;
+  duration: number;
+  pausedDuration: number;
+  totalVolume: number;
+  snapshot: WorkoutSnapshot;
+  event: WorkoutDomainEvent;
+}
+
+export interface WorkoutCompletionStore {
+  complete(input: WorkoutCompletionInput): Promise<void>;
+}
+
 export interface UserStore { create(user: UserProfile): Promise<void>; get(id: UUID): Promise<UserProfile | null>; list(): Promise<UserProfile[]>; update(user: UserProfile): Promise<void>; }
 export interface UserGymStore { get(userId: UUID, gymId: UUID): Promise<UserGymRelationship | null>; listByUser(userId: UUID): Promise<UserGymRelationship[]>; upsert(item: UserGymRelationship): Promise<void>; delete(userId: UUID, gymId: UUID): Promise<void>; setHome(item: UserGymRelationship): Promise<void>; clearHome(userId: UUID): Promise<void>; }
 
@@ -94,6 +108,7 @@ export interface GymFlowStore {
   templates: TemplateStore;
   sync: SyncStore;
   events: DomainEventStore;
+  workoutCompletion: WorkoutCompletionStore;
   gyms: GymStore;
   equipment: EquipmentStore;
   inventory: InventoryStore;

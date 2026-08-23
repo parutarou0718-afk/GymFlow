@@ -30,6 +30,15 @@ test('Home reloads workout totals whenever the tab receives focus', async () => 
   assert.doesNotMatch(source, /useEffect\(\(\) => \{\s*loadData\(\);/);
 });
 
+test('Home reads dashboard data only through Workout and Program public APIs', async () => {
+  const source = await readFile(resolve(process.cwd(), 'app/(tabs)/index.tsx'), 'utf8');
+
+  assert.match(source, /createWorkoutService/);
+  assert.match(source, /createProgramService/);
+  assert.doesNotMatch(source, /const \{\s*sessions\s*,\s*templates\s*\} = useStores\(\)/);
+  assert.doesNotMatch(source, /\bstore\.(sessions|templates)\b/);
+});
+
 test('web store and bootstrap boundaries do not reference the native database', async () => {
   const [factory, bootstrap, supabase] = await Promise.all([
     readFile(resolve(process.cwd(), 'src/db/store-factory.web.ts'), 'utf8'),
