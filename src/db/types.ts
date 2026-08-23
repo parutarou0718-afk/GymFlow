@@ -22,6 +22,7 @@ import type { MovementFamily } from '../modules/movement-family';
 import type { EquipmentRequirement, ExerciseMovementFamily, RequirementGroup } from '../modules/exercise-equipment';
 import type { ExerciseSubstitution } from '../modules/exercise-substitution';
 import type { UserProfile } from '../modules/user';
+import type { UserGymRelationship } from '../modules/user-gym';
 
 // ── Session Store ──
 
@@ -72,6 +73,7 @@ export interface DomainEventStore {
 }
 
 export interface UserStore { create(user: UserProfile): Promise<void>; get(id: UUID): Promise<UserProfile | null>; list(): Promise<UserProfile[]>; update(user: UserProfile): Promise<void>; }
+export interface UserGymStore { get(userId: UUID, gymId: UUID): Promise<UserGymRelationship | null>; listByUser(userId: UUID): Promise<UserGymRelationship[]>; upsert(item: UserGymRelationship): Promise<void>; delete(userId: UUID, gymId: UUID): Promise<void>; setHome(item: UserGymRelationship): Promise<void>; clearHome(userId: UUID): Promise<void>; }
 
 export interface GymStore { create(gym: Gym): Promise<void>; get(id: UUID): Promise<Gym | null>; list(): Promise<Gym[]>; search(query: string): Promise<Gym[]>; update(gym: Gym): Promise<void>; }
 export interface EquipmentStore { create(equipment: Equipment): Promise<void>; get(id: UUID): Promise<Equipment | null>; list(): Promise<Equipment[]>; search(query: string): Promise<Equipment[]>; update(equipment: Equipment): Promise<void>; }
@@ -99,6 +101,7 @@ export interface GymFlowStore {
   taxonomy: TaxonomyStore;
   substitutions: SubstitutionStore;
   users: UserStore;
+  userGyms: UserGymStore;
 }
 // 注: 此文件为存储层接口定义，所有业务层代码应依赖此接口而非 database.ts 实现。
 // 如需切换存储实现（如 SQLite → Supabase），只需新建实现文件并在 stores.tsx 中更换即可。

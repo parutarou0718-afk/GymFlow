@@ -22,6 +22,7 @@ import type { ExerciseSubstitution } from '../modules/exercise-substitution';
 import { substitutionSeeds } from '../modules/exercise-substitution/seed';
 import type { UserProfile } from '../modules/user';
 import { createDefaultUser } from '../modules/user';
+import type { UserGymRelationship } from '../modules/user-gym';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -167,6 +168,7 @@ export function createWebStore(): GymFlowStore {
   let equipmentRequirements: EquipmentRequirement[] = clone(equipmentRequirementSeeds);
   let substitutions: ExerciseSubstitution[] = clone(substitutionSeeds);
   let users: UserProfile[] = [createDefaultUser(DEMO_NOW)];
+  let userGyms: UserGymRelationship[] = [];
 
   return {
     sessions: {
@@ -341,6 +343,14 @@ export function createWebStore(): GymFlowStore {
       async get(id) { const user = users.find(item => item.id === id); return user ? clone(user) : null; },
       async list() { return users.filter(item => item.status === 'active').sort((a, b) => a.displayName.localeCompare(b.displayName)).map(clone); },
       async update(user) { const index = users.findIndex(item => item.id === user.id); if (index >= 0) users[index] = clone(user); },
+    },
+    userGyms: {
+      async get(userId, gymId) { const item = userGyms.find(value => value.userId === userId && value.gymId === gymId); return item ? clone(item) : null; },
+      async listByUser(userId) { return userGyms.filter(item => item.userId === userId).sort((a, b) => a.gymId.localeCompare(b.gymId)).map(clone); },
+      async upsert(item) { const index = userGyms.findIndex(value => value.userId === item.userId && value.gymId === item.gymId); if (index >= 0) userGyms[index] = clone(item); else userGyms.push(clone(item)); },
+      async delete(userId, gymId) { userGyms = userGyms.filter(item => item.userId !== userId || item.gymId !== gymId); },
+      async setHome(item) { userGyms = userGyms.map(value => value.userId === item.userId && value.isHome && value.gymId !== item.gymId ? { ...value, isHome: false, updatedAt: Math.max(Date.now(), value.updatedAt + 1) } : value).filter(value => value.isHome || value.isFavorite || value.lastVisitedAt != null || value.membershipStatus != null || value.membershipStartedAt != null || value.membershipExpiresAt != null); const index = userGyms.findIndex(value => value.userId === item.userId && value.gymId === item.gymId); if (index >= 0) userGyms[index] = clone(item); else userGyms.push(clone(item)); },
+      async clearHome(userId) { userGyms = userGyms.map(item => item.userId === userId && item.isHome ? { ...item, isHome: false, updatedAt: Math.max(Date.now(), item.updatedAt + 1) } : item).filter(item => item.isHome || item.isFavorite || item.lastVisitedAt != null || item.membershipStatus != null || item.membershipStartedAt != null || item.membershipExpiresAt != null); },
     },
   };
 }

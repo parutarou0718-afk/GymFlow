@@ -28,6 +28,7 @@ import type { ExerciseSubstitution } from '../modules/exercise-substitution';
 import { substitutionSeeds } from '../modules/exercise-substitution/seed';
 import type { UserProfile } from '../modules/user';
 import { createDefaultUser } from '../modules/user';
+import type { UserGymRelationship } from '../modules/user-gym';
 
 // --- Database Singleton ---
 let db: SQLite.SQLiteDatabase | null = null;
@@ -65,6 +66,16 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       status TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_gyms (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, gym_id TEXT NOT NULL,
+      is_home INTEGER NOT NULL DEFAULT 0, is_favorite INTEGER NOT NULL DEFAULT 0,
+      last_visited_at INTEGER, membership_status TEXT, membership_started_at INTEGER, membership_expires_at INTEGER,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+      FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE RESTRICT,
+      UNIQUE(user_id, gym_id)
     );
 
     -- Workout templates (plans)
@@ -212,6 +223,9 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_requirement_groups_exercise ON exercise_requirement_groups(exercise_id, priority);
     CREATE INDEX IF NOT EXISTS idx_equipment_requirements_group ON exercise_equipment_requirements(requirement_group_id);
     CREATE INDEX IF NOT EXISTS idx_substitutions_source ON exercise_substitutions(source_exercise_id, status);
+    CREATE INDEX IF NOT EXISTS idx_user_gyms_user ON user_gyms(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_gyms_gym ON user_gyms(gym_id);
+    CREATE INDEX IF NOT EXISTS idx_user_gyms_recent ON user_gyms(user_id, last_visited_at);
   `);
 
   for (const item of exerciseSeeds) {
@@ -303,6 +317,38 @@ export async function updateUser(user: UserProfile): Promise<void> {
     'UPDATE users SET display_name=?,avatar_uri=?,experience_level=?,training_goals_json=?,preferences_json=?,privacy_json=?,status=?,updated_at=? WHERE id=?',
     [user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.status, user.updatedAt, user.id],
   );
+}
+
+// ========================================
+// User–Gym Relationship CRUD
+// ========================================
+
+function mapUserGym(row: any): UserGymRelationship {
+  return { id: row.id, userId: row.user_id, gymId: row.gym_id, isHome: Boolean(row.is_home), isFavorite: Boolean(row.is_favorite), lastVisitedAt: row.last_visited_at ?? null, membershipStatus: row.membership_status ?? null, membershipStartedAt: row.membership_started_at ?? null, membershipExpiresAt: row.membership_expires_at ?? null, createdAt: row.created_at, updatedAt: row.updated_at } as UserGymRelationship;
+}
+
+const userGymInsert = 'INSERT INTO user_gyms (id,user_id,gym_id,is_home,is_favorite,last_visited_at,membership_status,membership_started_at,membership_expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,gym_id) DO UPDATE SET is_home=excluded.is_home,is_favorite=excluded.is_favorite,last_visited_at=excluded.last_visited_at,membership_status=excluded.membership_status,membership_started_at=excluded.membership_started_at,membership_expires_at=excluded.membership_expires_at,updated_at=excluded.updated_at';
+function userGymParams(item: UserGymRelationship) { return [item.id,item.userId,item.gymId,item.isHome ? 1 : 0,item.isFavorite ? 1 : 0,item.lastVisitedAt ?? null,item.membershipStatus ?? null,item.membershipStartedAt ?? null,item.membershipExpiresAt ?? null,item.createdAt,item.updatedAt]; }
+export async function getUserGymRelationship(userId: UUID, gymId: UUID): Promise<UserGymRelationship | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM user_gyms WHERE user_id=? AND gym_id=?', [userId, gymId]); return row ? mapUserGym(row) : null; }
+export async function listUserGymRelationships(userId: UUID): Promise<UserGymRelationship[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM user_gyms WHERE user_id=? ORDER BY gym_id', [userId])).map(mapUserGym); }
+export async function upsertUserGymRelationship(item: UserGymRelationship): Promise<void> { await (await getDatabase()).runAsync(userGymInsert, userGymParams(item)); }
+export async function deleteUserGymRelationship(userId: UUID, gymId: UUID): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM user_gyms WHERE user_id=? AND gym_id=?', [userId, gymId]); }
+export async function setUserGymHome(item: UserGymRelationship): Promise<void> {
+  const database = await getDatabase();
+  await database.withExclusiveTransactionAsync(async transaction => {
+    const now = Date.now();
+    await transaction.runAsync('UPDATE user_gyms SET is_home=0,updated_at=? WHERE user_id=? AND gym_id<>? AND is_home=1', [now, item.userId, item.gymId]);
+    await transaction.runAsync('DELETE FROM user_gyms WHERE user_id=? AND gym_id<>? AND is_home=0 AND is_favorite=0 AND last_visited_at IS NULL AND membership_status IS NULL AND membership_started_at IS NULL AND membership_expires_at IS NULL', [item.userId, item.gymId]);
+    await transaction.runAsync(userGymInsert, userGymParams(item));
+  });
+}
+export async function clearUserGymHome(userId: UUID): Promise<void> {
+  const database = await getDatabase();
+  await database.withExclusiveTransactionAsync(async transaction => {
+    const now = Date.now();
+    await transaction.runAsync('UPDATE user_gyms SET is_home=0,updated_at=? WHERE user_id=? AND is_home=1', [now, userId]);
+    await transaction.runAsync('DELETE FROM user_gyms WHERE user_id=? AND is_home=0 AND is_favorite=0 AND last_visited_at IS NULL AND membership_status IS NULL AND membership_started_at IS NULL AND membership_expires_at IS NULL', [userId]);
+  });
 }
 
 // ========================================
@@ -762,6 +808,7 @@ export function createStore(): GymFlowStore {
     },
     substitutions: { create: createExerciseSubstitution, get: getExerciseSubstitution, listForSource: listExerciseSubstitutionsForSource, listToTarget: listExerciseSubstitutionsToTarget, update: updateExerciseSubstitution },
     users: { create: createUser, get: getUser, list: listUsers, update: updateUser },
+    userGyms: { get: getUserGymRelationship, listByUser: listUserGymRelationships, upsert: upsertUserGymRelationship, delete: deleteUserGymRelationship, setHome: setUserGymHome, clearHome: clearUserGymHome },
   };
 
   return _store;
