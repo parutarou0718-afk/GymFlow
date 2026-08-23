@@ -40,7 +40,7 @@ test('migration ledger claims an already-current M11 schema baseline without rep
   const applied = await runMigrationLedger(state.adapter, migrations);
 
   assert.deepEqual(applied, []);
-  assert.deepEqual(state.written, [5]);
+  assert.deepEqual(state.written, [6]);
 });
 
 test('migration ledger advances an older version-one database only through missing migrations', async () => {

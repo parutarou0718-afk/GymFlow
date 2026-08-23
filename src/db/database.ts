@@ -29,6 +29,7 @@ import { substitutionSeeds } from '../modules/exercise-substitution/seed';
 import type { UserProfile } from '../modules/user';
 import { createDefaultUser } from '../modules/user';
 import type { UserGymRelationship } from '../modules/user-gym';
+import type { ExternalGymLink } from '../modules/gym-discovery';
 import { applySqliteMigrationLedger } from './migrations';
 
 // --- Database Singleton ---
@@ -722,6 +723,9 @@ export async function getGym(id: UUID): Promise<Gym | null> { const row = await 
 export async function listGyms(): Promise<Gym[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM gyms ORDER BY name')).map(mapGym); }
 export async function searchGyms(query: string): Promise<Gym[]> { const like = `%${query.trim()}%`; return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM gyms WHERE name LIKE ? OR branch_name LIKE ? OR address LIKE ? ORDER BY name', [like, like, like])).map(mapGym); }
 export async function updateGym(gym: Gym): Promise<void> { const database = await getDatabase(); await database.runAsync('UPDATE gyms SET name=?,branch_name=?,address=?,latitude=?,longitude=?,external_provider=?,external_place_id=?,status=?,updated_at=? WHERE id=?', [gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.status,gym.updatedAt,gym.id]); }
+export async function getGymExternalLink(provider: string, externalPlaceId: string): Promise<ExternalGymLink | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gym_external_links WHERE provider=? AND external_place_id=?', [provider, externalPlaceId]); return row ? { id: row.id, gymId: row.gym_id, provider: row.provider, externalPlaceId: row.external_place_id, createdAt: row.created_at } : null; }
+export async function createGymExternalLink(link: ExternalGymLink): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO gym_external_links (id,gym_id,provider,external_place_id,created_at) VALUES (?,?,?,?,?)', [link.id, link.gymId, link.provider, link.externalPlaceId, link.createdAt]); }
+export async function importGymWithExternalLink(gym: Gym, link: ExternalGymLink): Promise<void> { const database = await getDatabase(); await database.withExclusiveTransactionAsync(async tx => { await tx.runAsync('INSERT INTO gyms (id,name,branch_name,address,latitude,longitude,external_provider,external_place_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [gym.id,gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.status,gym.createdAt,gym.updatedAt]); await tx.runAsync('INSERT INTO gym_external_links (id,gym_id,provider,external_place_id,created_at) VALUES (?,?,?,?,?)', [link.id,link.gymId,link.provider,link.externalPlaceId,link.createdAt]); }); }
 
 export async function createEquipment(equipment: Equipment): Promise<void> { const database = await getDatabase(); await database.runAsync('INSERT INTO equipment (id,name,category,description,aliases_json,archived,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', [equipment.id,equipment.name,equipment.category,equipment.description ?? null,JSON.stringify(equipment.aliases),equipment.archived ? 1 : 0,equipment.createdAt,equipment.updatedAt]); }
 export async function getEquipment(id: UUID): Promise<Equipment | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM equipment WHERE id = ?', [id]); return row ? mapEquipment(row) : null; }
@@ -810,6 +814,8 @@ export function createStore(): GymFlowStore {
     },
     workoutCompletion: { complete: completeWorkoutAtomically },
     gyms: { create: createGym, get: getGym, list: listGyms, search: searchGyms, update: updateGym },
+    gymExternalLinks: { get: getGymExternalLink, create: createGymExternalLink },
+    gymDiscoveryImport: { import: importGymWithExternalLink },
     equipment: { create: createEquipment, get: getEquipment, list: listEquipment, search: searchEquipment, update: updateEquipment },
     inventory: { create: createInventoryItem, get: getInventoryItem, getByGymAndEquipment: getInventoryByGymAndEquipment, listByGym: listInventoryByGym, update: updateInventoryItem, removeByGymAndEquipment: removeInventoryByGymAndEquipment },
     exercises: { create: createExerciseMaster, get: getExerciseMaster, list: listExerciseMasters, search: searchExerciseMasters, update: updateExerciseMaster },

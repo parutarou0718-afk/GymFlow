@@ -23,6 +23,7 @@ import { substitutionSeeds } from '../modules/exercise-substitution/seed';
 import type { UserProfile } from '../modules/user';
 import { createDefaultUser } from '../modules/user';
 import type { UserGymRelationship } from '../modules/user-gym';
+import type { ExternalGymLink } from '../modules/gym-discovery';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -169,6 +170,7 @@ export function createWebStore(): GymFlowStore {
   let substitutions: ExerciseSubstitution[] = clone(substitutionSeeds);
   let users: UserProfile[] = [createDefaultUser(DEMO_NOW)];
   let userGyms: UserGymRelationship[] = [];
+  let gymExternalLinks: ExternalGymLink[] = [];
 
   return {
     sessions: {
@@ -377,6 +379,8 @@ export function createWebStore(): GymFlowStore {
       async list() { return users.filter(item => item.status === 'active').sort((a, b) => a.displayName.localeCompare(b.displayName)).map(clone); },
       async update(user) { const index = users.findIndex(item => item.id === user.id); if (index >= 0) users[index] = clone(user); },
     },
+    gymExternalLinks: { async get(provider, externalPlaceId) { const item = gymExternalLinks.find(value => value.provider === provider && value.externalPlaceId === externalPlaceId); return item ? clone(item) : null; }, async create(link) { if (gymExternalLinks.some(value => value.provider === link.provider && value.externalPlaceId === link.externalPlaceId)) throw new Error('External place already linked'); gymExternalLinks.push(clone(link)); } },
+    gymDiscoveryImport: { async import(gym, link) { if (gymExternalLinks.some(value => value.provider === link.provider && value.externalPlaceId === link.externalPlaceId)) throw new Error('External place already linked'); gyms = [...gyms, clone(gym)]; gymExternalLinks = [...gymExternalLinks, clone(link)]; } },
     userGyms: {
       async get(userId, gymId) { const item = userGyms.find(value => value.userId === userId && value.gymId === gymId); return item ? clone(item) : null; },
       async listByUser(userId) { return userGyms.filter(item => item.userId === userId).sort((a, b) => a.gymId.localeCompare(b.gymId)).map(clone); },

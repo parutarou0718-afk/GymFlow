@@ -23,6 +23,7 @@ import type { EquipmentRequirement, ExerciseMovementFamily, RequirementGroup } f
 import type { ExerciseSubstitution } from '../modules/exercise-substitution';
 import type { UserProfile } from '../modules/user';
 import type { UserGymRelationship } from '../modules/user-gym';
+import type { ExternalGymLink } from '../modules/gym-discovery';
 
 // ── Session Store ──
 
@@ -90,6 +91,8 @@ export interface UserStore { create(user: UserProfile): Promise<void>; get(id: U
 export interface UserGymStore { get(userId: UUID, gymId: UUID): Promise<UserGymRelationship | null>; listByUser(userId: UUID): Promise<UserGymRelationship[]>; upsert(item: UserGymRelationship): Promise<void>; delete(userId: UUID, gymId: UUID): Promise<void>; setHome(item: UserGymRelationship): Promise<void>; clearHome(userId: UUID): Promise<void>; }
 
 export interface GymStore { create(gym: Gym): Promise<void>; get(id: UUID): Promise<Gym | null>; list(): Promise<Gym[]>; search(query: string): Promise<Gym[]>; update(gym: Gym): Promise<void>; }
+export interface GymExternalLinkStore { get(provider: string, externalPlaceId: string): Promise<ExternalGymLink | null>; create(link: ExternalGymLink): Promise<void>; }
+export interface GymDiscoveryImportStore { import(gym: Gym, link: ExternalGymLink): Promise<void>; }
 export interface EquipmentStore { create(equipment: Equipment): Promise<void>; get(id: UUID): Promise<Equipment | null>; list(): Promise<Equipment[]>; search(query: string): Promise<Equipment[]>; update(equipment: Equipment): Promise<void>; }
 export interface InventoryStore { create(item: GymEquipmentInventoryItem): Promise<void>; get(id: UUID): Promise<GymEquipmentInventoryItem | null>; getByGymAndEquipment(gymId: UUID, equipmentId: UUID): Promise<GymEquipmentInventoryItem | null>; listByGym(gymId: UUID): Promise<GymEquipmentInventoryItem[]>; update(item: GymEquipmentInventoryItem): Promise<void>; removeByGymAndEquipment(gymId: UUID, equipmentId: UUID): Promise<void>; }
 export interface ExerciseStore { create(item: ExerciseMaster): Promise<void>; get(id: UUID): Promise<ExerciseMaster | null>; list(): Promise<ExerciseMaster[]>; search(query: string): Promise<ExerciseMaster[]>; update(item: ExerciseMaster): Promise<void>; }
@@ -110,6 +113,8 @@ export interface GymFlowStore {
   events: DomainEventStore;
   workoutCompletion: WorkoutCompletionStore;
   gyms: GymStore;
+  gymExternalLinks: GymExternalLinkStore;
+  gymDiscoveryImport: GymDiscoveryImportStore;
   equipment: EquipmentStore;
   inventory: InventoryStore;
   exercises: ExerciseStore;
