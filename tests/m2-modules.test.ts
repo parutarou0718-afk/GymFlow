@@ -34,3 +34,14 @@ test('M2 services create, search, archive, and reuse Equipment across Gym invent
   assert.equal(await equipment.getEquipment(hackSquat.id), null);
   assert.equal((await gyms.archiveGym(gymA.id)).status, 'closed');
 });
+
+test('Gym geography accepts complete coordinates and rejects partial or out-of-range pairs', async () => {
+  const store = createWebStore();
+  const gyms = createGymService(store);
+
+  const created = await gyms.createGym({ name: 'Coordinate Gym', latitude: 35.6762, longitude: 139.6503 });
+  assert.equal(created.latitude, 35.6762);
+  await assert.rejects(() => gyms.updateGym(created.id, { latitude: 91, longitude: 139 }), /latitude/i);
+  const withoutCoordinates = await gyms.createGym({ name: 'No coordinate Gym' });
+  await assert.rejects(() => gyms.updateGym(withoutCoordinates.id, { latitude: 35 }), /together/i);
+});

@@ -10,7 +10,7 @@ export interface Migration {
   up(): Promise<void>;
 }
 
-export const LATEST_SCHEMA_VERSION = 4;
+export const LATEST_SCHEMA_VERSION = 5;
 
 export async function runMigrationLedger(adapter: MigrationLedgerAdapter, migrations: Migration[]): Promise<number[]> {
   const ordered = [...migrations].sort((left, right) => left.version - right.version);
@@ -105,6 +105,15 @@ function sqliteMigrations(database: MigrationDatabase): Migration[] {
         const migratedColumns = await columnNames(database, 'users');
         if (migratedColumns.has('name')) await database.runAsync("UPDATE users SET display_name = name WHERE display_name = '' OR display_name IS NULL");
         if (migratedColumns.has('avatar')) await database.runAsync('UPDATE users SET avatar_uri = avatar WHERE avatar_uri IS NULL');
+      },
+    },
+    {
+      version: 5,
+      name: 'gym-geography-columns',
+      up: async () => {
+        await ensureColumn(database, 'gyms', 'latitude', 'REAL');
+        await ensureColumn(database, 'gyms', 'longitude', 'REAL');
+        await ensureColumn(database, 'gyms', 'external_place_id', 'TEXT');
       },
     },
   ];

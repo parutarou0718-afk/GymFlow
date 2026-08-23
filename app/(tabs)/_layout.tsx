@@ -68,6 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen name="program-matching" options={{ title: 'Program Matching' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="user-gyms" options={{ title: 'User Gyms' }} />
+      <Tabs.Screen name="location" options={{ title: 'Location' }} />
       <Tabs.Screen
         name="settings"
         options={{

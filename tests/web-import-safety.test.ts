@@ -51,3 +51,10 @@ test('web store and bootstrap boundaries do not reference the native database', 
   assert.doesNotMatch(bootstrap, /database/);
   assert.doesNotMatch(supabase, /database/);
 });
+
+test('Location validation page uses Gym and Location public APIs only', async () => {
+  const source = await readFile(resolve(process.cwd(), 'app/(tabs)/location.tsx'), 'utf8');
+  assert.match(source, /createGymService/);
+  assert.match(source, /createLocationService/);
+  assert.doesNotMatch(source, /store\.gyms/);
+});
