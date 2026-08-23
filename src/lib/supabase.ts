@@ -4,6 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import type { WorkoutSnapshot, SyncQueueItem } from '../types';
 import { getPendingSyncItems, updateSyncStatus, getDatabase } from '../db/database';
 
@@ -16,6 +17,7 @@ const SESSION_TOKEN_KEY = 'gymflow_supabase_session';
 let supabaseClient: ReturnType<typeof createClient> | null = null;
 
 export async function getSupabaseClient(): Promise<ReturnType<typeof createClient> | null> {
+  if (Platform.OS === 'web') return null;
   if (supabaseClient) return supabaseClient;
 
   const url = await SecureStore.getItemAsync(SUPABASE_URL_KEY);
@@ -37,12 +39,14 @@ export async function getSupabaseClient(): Promise<ReturnType<typeof createClien
 }
 
 export async function configureSupabase(url: string, anonKey: string): Promise<void> {
+  if (Platform.OS === 'web') return;
   await SecureStore.setItemAsync(SUPABASE_URL_KEY, url);
   await SecureStore.setItemAsync(SUPABASE_ANON_KEY, anonKey);
   supabaseClient = null; // reset
 }
 
 export async function isConfigured(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
   const url = await SecureStore.getItemAsync(SUPABASE_URL_KEY);
   const key = await SecureStore.getItemAsync(SUPABASE_ANON_KEY);
   return !!(url && key);

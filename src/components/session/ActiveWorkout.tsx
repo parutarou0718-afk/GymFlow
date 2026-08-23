@@ -4,7 +4,7 @@
 // ========================================
 
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, Modal, Alert } from 'react-native';
 import { colors, spacing, radius, typography } from '../../lib/theme';
 import { useWorkoutEngine } from '../../hooks/useWorkoutEngine';
 import { ExerciseBlock } from './ExerciseBlock';
@@ -21,13 +21,13 @@ interface ActiveWorkoutProps {
 export function ActiveWorkout({ templateId, existingSessionId, onFinish, onLeave }: ActiveWorkoutProps) {
   const engine = useWorkoutEngine({ templateId, existingSessionId, onFinish });
   const [pickingExercise, setPickingExercise] = useState(false);
+  const [confirmation, setConfirmation] = useState<'finish' | 'discard' | null>(null);
   const requestFinishWorkout = () => {
     if (engine.saving) return;
-    Alert.alert('Finish Workout', 'Complete this workout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Finish', onPress: () => void engine.handleFinish() },
-    ]);
+    setConfirmation('finish');
   };
+  const requestDiscardWorkout = () => { if (!engine.saving) setConfirmation('discard'); };
+  const confirmationDialog = <Modal transparent visible={confirmation !== null} animationType="fade" onRequestClose={() => setConfirmation(null)}><View style={styles.confirmBackdrop}><View style={styles.confirmCard}><Text style={typography.h2}>{confirmation === 'finish' ? 'Finish Workout' : 'Discard Workout'}</Text><Text style={[typography.bodySmall, { marginTop: spacing.sm }]}>{confirmation === 'finish' ? 'Complete this workout?' : 'Discard this workout? It will not appear in history.'}</Text><View style={styles.confirmActions}><TouchableOpacity disabled={engine.saving} onPress={() => setConfirmation(null)}><Text style={{ color: colors.textSecondary, fontWeight: '700' }}>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={engine.saving} onPress={() => { const action = confirmation; setConfirmation(null); if (action === 'finish') void engine.handleFinish(); else void engine.handleDiscard(); }}><Text style={{ color: confirmation === 'finish' ? colors.primary : colors.danger, fontWeight: '700' }}>{confirmation === 'finish' ? 'Finish' : 'Discard'}</Text></TouchableOpacity></View></View></View></Modal>;
 
   if (!engine.session) return null;
 
@@ -38,6 +38,7 @@ export function ActiveWorkout({ templateId, existingSessionId, onFinish, onLeave
   // Paused state → full overlay
   if (engine.isPaused) {
     return (
+      <>
       <PauseOverlay
         elapsed={engine.elapsed}
         saving={engine.saving}
@@ -46,10 +47,13 @@ export function ActiveWorkout({ templateId, existingSessionId, onFinish, onLeave
         onLeave={onLeave}
         formatTime={engine.formatTime}
       />
+      {confirmationDialog}
+      </>
     );
   }
 
   return (
+    <>
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -71,7 +75,7 @@ export function ActiveWorkout({ templateId, existingSessionId, onFinish, onLeave
           <TouchableOpacity disabled={engine.saving} onPress={requestFinishWorkout} style={styles.finishButton}>
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Finish</Text>
           </TouchableOpacity>
-          <TouchableOpacity disabled={engine.saving} onPress={() => Alert.alert('Discard Workout', 'Discard this workout? It will not appear in history.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Discard', style: 'destructive', onPress: () => void engine.handleDiscard() }])}>
+          <TouchableOpacity disabled={engine.saving} onPress={requestDiscardWorkout}>
             <Text style={{ color: colors.danger, fontWeight: '700', fontSize: 13 }}>Discard</Text>
           </TouchableOpacity>
         </View>
@@ -100,6 +104,8 @@ export function ActiveWorkout({ templateId, existingSessionId, onFinish, onLeave
         ListFooterComponent={<TouchableOpacity style={styles.addExercise} onPress={() => setPickingExercise(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>+ Add Exercise</Text></TouchableOpacity>}
       />
     </View>
+    {confirmationDialog}
+    </>
   );
 }
 
@@ -157,4 +163,7 @@ const styles = StyleSheet.create({
   },
   empty: { alignItems: 'center', paddingVertical: spacing['4xl'] },
   addExercise: { alignItems: 'center', padding: spacing.lg, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md },
+  confirmBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  confirmCard: { width: '100%', maxWidth: 360, backgroundColor: colors.bgSecondary, borderRadius: radius.lg, padding: spacing.xl },
+  confirmActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.xl, marginTop: spacing.xl },
 });
