@@ -2,7 +2,7 @@
 // GymFlow - Home Dashboard
 // ========================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   StyleSheet,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { colors, spacing, radius, typography, shadows } from '../../src/lib/theme';
 import { Card, Button, Metric, EmptyState, SectionHeader } from '../../src/components/ui';
 import { formatDuration, formatVolume, formatShortDate } from '../../src/lib/utils';
@@ -36,11 +36,13 @@ export default function HomeScreen() {
     setActiveSession(active);
     setRecentTemplates(templs.slice(0, 5));
     setStats({ workouts, volume });
-  }, []);
+  }, [sessions, templates]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadData();
+    }, [loadData])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

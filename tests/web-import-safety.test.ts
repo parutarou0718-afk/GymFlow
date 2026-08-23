@@ -22,6 +22,14 @@ test('active workout provides a Home exit without routing through lifecycle acti
   assert.match(workout, /onPress=\{onLeave\}/);
 });
 
+test('Home reloads workout totals whenever the tab receives focus', async () => {
+  const source = await readFile(resolve(process.cwd(), 'app/(tabs)/index.tsx'), 'utf8');
+
+  assert.match(source, /useFocusEffect/);
+  assert.match(source, /useFocusEffect\(\s*useCallback\(\(\) => \{\s*void loadData\(\);/s);
+  assert.doesNotMatch(source, /useEffect\(\(\) => \{\s*loadData\(\);/);
+});
+
 test('web store and bootstrap boundaries do not reference the native database', async () => {
   const [factory, bootstrap, supabase] = await Promise.all([
     readFile(resolve(process.cwd(), 'src/db/store-factory.web.ts'), 'utf8'),
