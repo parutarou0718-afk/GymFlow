@@ -25,6 +25,13 @@ test('WorkoutService creates, edits, restores, and completes a quick workout thr
   assert.equal((await store.events.getForSession(started.id)).filter(event => event.eventType === 'WORKOUT_COMPLETED').length, 1);
 });
 
+test('Workout start accepts optional gymId without changing the default null behavior', async () => {
+  const service = createWorkoutService(createWebStore());
+  assert.equal((await service.startQuickWorkout()).gymId, null);
+  const scopedService = createWorkoutService(createWebStore());
+  assert.equal((await scopedService.startQuickWorkout({ gymId: 'gym-current' })).gymId, 'gym-current');
+});
+
 for (const failureStage of ['session', 'snapshot', 'event'] as const) {
   test(`WorkoutService leaves no partial completion when atomic ${failureStage} persistence fails`, async () => {
     const store = createWebStore() as ReturnType<typeof createWebStore> & {

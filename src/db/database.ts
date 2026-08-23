@@ -28,6 +28,7 @@ import type { ExerciseSubstitution } from '../modules/exercise-substitution';
 import { substitutionSeeds } from '../modules/exercise-substitution/seed';
 import type { UserProfile } from '../modules/user';
 import { createDefaultUser } from '../modules/user';
+import type { GymContext } from '../modules/gym-context';
 import type { UserGymRelationship } from '../modules/user-gym';
 import type { ExternalGymLink } from '../modules/gym-discovery';
 import { applySqliteMigrationLedger } from './migrations';
@@ -93,6 +94,7 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       id TEXT PRIMARY KEY,
       template_id TEXT,
       template_name TEXT,
+      gym_id TEXT,
       status TEXT NOT NULL DEFAULT 'draft',
       started_at INTEGER NOT NULL,
       finished_at INTEGER,
@@ -389,12 +391,13 @@ export async function createSession(session: WorkoutSession): Promise<void> {
   const now = Date.now();
 
   await database.runAsync(
-    `INSERT INTO sessions (id, template_id, template_name, status, started_at, finished_at, completed_at, paused_at, duration, paused_duration, total_volume, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, template_id, template_name, gym_id, status, started_at, finished_at, completed_at, paused_at, duration, paused_duration, total_volume, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       session.id,
       session.templateId,
       session.templateName || null,
+      session.gymId ?? null,
       session.status,
       session.startedAt,
       session.finishedAt || null,
@@ -528,6 +531,7 @@ export async function getSession(id: UUID): Promise<WorkoutSession | null> {
     id: sessionRow.id,
     templateId: sessionRow.template_id,
     templateName: sessionRow.template_name || undefined,
+    gymId: sessionRow.gym_id ?? null,
     status: sessionRow.status,
     startedAt: sessionRow.started_at,
     finishedAt: sessionRow.finished_at || undefined,
@@ -734,6 +738,10 @@ export async function searchEquipment(query: string): Promise<Equipment[]> { con
 export async function updateEquipment(equipment: Equipment): Promise<void> { const database = await getDatabase(); await database.runAsync('UPDATE equipment SET name=?,category=?,description=?,aliases_json=?,archived=?,updated_at=? WHERE id=?', [equipment.name,equipment.category,equipment.description ?? null,JSON.stringify(equipment.aliases),equipment.archived ? 1 : 0,equipment.updatedAt,equipment.id]); }
 
 export async function createInventoryItem(item: GymEquipmentInventoryItem): Promise<void> { const database = await getDatabase(); await database.runAsync('INSERT INTO gym_equipment (id,gym_id,equipment_id,quantity,area,notes,status,verified,verified_at,capabilities_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [item.id,item.gymId,item.equipmentId,item.quantity,item.area ?? null,item.notes ?? null,item.status,item.verified ? 1 : 0,item.verifiedAt ?? null,item.capabilities ? JSON.stringify(item.capabilities) : null,item.createdAt,item.updatedAt]); }
+
+export async function getGymContext(userId: UUID): Promise<GymContext | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM user_gym_contexts WHERE user_id=?', [userId]); return row ? { userId: row.user_id, currentGymId: row.current_gym_id ?? null, selectedAt: row.selected_at ?? null, updatedAt: row.updated_at } : null; }
+export async function setGymContext(context: GymContext): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO user_gym_contexts (user_id,current_gym_id,selected_at,updated_at) VALUES (?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET current_gym_id=excluded.current_gym_id,selected_at=excluded.selected_at,updated_at=excluded.updated_at', [context.userId, context.currentGymId, context.selectedAt, context.updatedAt]); }
+export async function clearGymContext(userId: UUID, updatedAt: number): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO user_gym_contexts (user_id,current_gym_id,selected_at,updated_at) VALUES (?,NULL,NULL,?) ON CONFLICT(user_id) DO UPDATE SET current_gym_id=NULL,selected_at=NULL,updated_at=excluded.updated_at', [userId, updatedAt]); }
 export async function getInventoryItem(id: UUID): Promise<GymEquipmentInventoryItem | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gym_equipment WHERE id = ?', [id]); return row ? mapInventory(row) : null; }
 export async function getInventoryByGymAndEquipment(gymId: UUID, equipmentId: UUID): Promise<GymEquipmentInventoryItem | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gym_equipment WHERE gym_id = ? AND equipment_id = ?', [gymId,equipmentId]); return row ? mapInventory(row) : null; }
 export async function listInventoryByGym(gymId: UUID): Promise<GymEquipmentInventoryItem[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM gym_equipment WHERE gym_id = ? ORDER BY created_at', [gymId])).map(mapInventory); }
@@ -828,6 +836,7 @@ export function createStore(): GymFlowStore {
     substitutions: { create: createExerciseSubstitution, get: getExerciseSubstitution, listForSource: listExerciseSubstitutionsForSource, listToTarget: listExerciseSubstitutionsToTarget, update: updateExerciseSubstitution },
     users: { create: createUser, get: getUser, list: listUsers, update: updateUser },
     userGyms: { get: getUserGymRelationship, listByUser: listUserGymRelationships, upsert: upsertUserGymRelationship, delete: deleteUserGymRelationship, setHome: setUserGymHome, clearHome: clearUserGymHome },
+    gymContexts: { get: getGymContext, set: setGymContext, clear: clearGymContext },
   };
 
   return _store;

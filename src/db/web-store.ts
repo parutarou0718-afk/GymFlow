@@ -24,6 +24,7 @@ import type { UserProfile } from '../modules/user';
 import { createDefaultUser } from '../modules/user';
 import type { UserGymRelationship } from '../modules/user-gym';
 import type { ExternalGymLink } from '../modules/gym-discovery';
+import type { GymContext } from '../modules/gym-context';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -170,6 +171,7 @@ export function createWebStore(): GymFlowStore {
   let substitutions: ExerciseSubstitution[] = clone(substitutionSeeds);
   let users: UserProfile[] = [createDefaultUser(DEMO_NOW)];
   let userGyms: UserGymRelationship[] = [];
+  let gymContexts: GymContext[] = [];
   let gymExternalLinks: ExternalGymLink[] = [];
 
   return {
@@ -388,6 +390,11 @@ export function createWebStore(): GymFlowStore {
       async delete(userId, gymId) { userGyms = userGyms.filter(item => item.userId !== userId || item.gymId !== gymId); },
       async setHome(item) { userGyms = userGyms.map(value => value.userId === item.userId && value.isHome && value.gymId !== item.gymId ? { ...value, isHome: false, updatedAt: Math.max(Date.now(), value.updatedAt + 1) } : value).filter(value => value.isHome || value.isFavorite || value.lastVisitedAt != null || value.membershipStatus != null || value.membershipStartedAt != null || value.membershipExpiresAt != null); const index = userGyms.findIndex(value => value.userId === item.userId && value.gymId === item.gymId); if (index >= 0) userGyms[index] = clone(item); else userGyms.push(clone(item)); },
       async clearHome(userId) { userGyms = userGyms.map(item => item.userId === userId && item.isHome ? { ...item, isHome: false, updatedAt: Math.max(Date.now(), item.updatedAt + 1) } : item).filter(item => item.isHome || item.isFavorite || item.lastVisitedAt != null || item.membershipStatus != null || item.membershipStartedAt != null || item.membershipExpiresAt != null); },
+    },
+    gymContexts: {
+      async get(userId) { const context = gymContexts.find(item => item.userId === userId); return context ? clone(context) : null; },
+      async set(context) { const index = gymContexts.findIndex(item => item.userId === context.userId); if (index >= 0) gymContexts[index] = clone(context); else gymContexts.push(clone(context)); },
+      async clear(userId, updatedAt) { const index = gymContexts.findIndex(item => item.userId === userId); const context = { userId, currentGymId: null, selectedAt: null, updatedAt }; if (index >= 0) gymContexts[index] = context; else gymContexts.push(context); },
     },
   };
 }

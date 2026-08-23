@@ -70,6 +70,7 @@ export default function TabLayout() {
       <Tabs.Screen name="user-gyms" options={{ title: 'User Gyms' }} />
       <Tabs.Screen name="location" options={{ title: 'Location' }} />
       <Tabs.Screen name="discovery" options={{ title: 'Discovery' }} />
+      <Tabs.Screen name="current-gym" options={{ title: 'Current Gym' }} />
       <Tabs.Screen
         name="settings"
         options={{

@@ -10,15 +10,23 @@ export interface Migration {
   up(): Promise<void>;
 }
 
-export const LATEST_SCHEMA_VERSION = 6;
+export const LATEST_SCHEMA_VERSION = 7;
+const COMPATIBILITY_BASELINE_VERSION = 6;
 
 export async function runMigrationLedger(adapter: MigrationLedgerAdapter, migrations: Migration[]): Promise<number[]> {
   const ordered = [...migrations].sort((left, right) => left.version - right.version);
   const storedVersion = await adapter.readVersion();
 
   if (storedVersion === 1 && await adapter.isCurrentCompatibilityBaseline()) {
-    await adapter.writeVersion(LATEST_SCHEMA_VERSION);
-    return [];
+    await adapter.writeVersion(COMPATIBILITY_BASELINE_VERSION);
+    const pending = ordered.filter(migration => migration.version > COMPATIBILITY_BASELINE_VERSION);
+    const applied: number[] = [];
+    for (const migration of pending) {
+      await migration.up();
+      await adapter.writeVersion(migration.version);
+      applied.push(migration.version);
+    }
+    return applied;
   }
 
   const currentVersion = storedVersion ?? 0;
@@ -117,6 +125,14 @@ function sqliteMigrations(database: MigrationDatabase): Migration[] {
       },
     },
     { version: 6, name: 'gym-external-links', up: () => database.execAsync(`CREATE TABLE IF NOT EXISTS gym_external_links (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL, provider TEXT NOT NULL, external_place_id TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(provider, external_place_id), FOREIGN KEY(gym_id) REFERENCES gyms(id) ON DELETE RESTRICT); CREATE INDEX IF NOT EXISTS idx_gym_external_links_gym ON gym_external_links(gym_id);`) },
+    {
+      version: 7,
+      name: 'current-gym-context-and-workout-gym',
+      up: async () => {
+        await ensureColumn(database, 'sessions', 'gym_id', 'TEXT');
+        await database.execAsync(`CREATE TABLE IF NOT EXISTS user_gym_contexts (user_id TEXT PRIMARY KEY, current_gym_id TEXT, selected_at INTEGER, updated_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY(current_gym_id) REFERENCES gyms(id) ON DELETE SET NULL);`);
+      },
+    },
   ];
 }
 

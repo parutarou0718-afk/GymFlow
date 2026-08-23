@@ -9,4 +9,4 @@ export type {
 } from './types';
 export type { WorkoutStore } from './ports';
 export { createWorkoutService } from './workout-service';
-export type { WorkoutService } from './workout-service';
+export type { WorkoutService, StartWorkoutFromTemplateInput, StartWorkoutOptions } from './workout-service';

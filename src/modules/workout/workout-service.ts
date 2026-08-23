@@ -4,10 +4,12 @@ import type { CompletedSet, Exercise, SessionExercise, WorkoutSession, WorkoutSn
 import type { WorkoutStore } from './ports';
 
 type SetUpdate = { weight?: number; reps?: number; completed?: boolean };
+export type StartWorkoutOptions = { gymId?: string | null };
+export type StartWorkoutFromTemplateInput = string | ({ templateId: string } & StartWorkoutOptions);
 
 export interface WorkoutService {
-  startQuickWorkout(): Promise<WorkoutSession>;
-  startWorkoutFromTemplate(templateId: string): Promise<WorkoutSession>;
+  startQuickWorkout(options?: StartWorkoutOptions): Promise<WorkoutSession>;
+  startWorkoutFromTemplate(input: StartWorkoutFromTemplateInput): Promise<WorkoutSession>;
   getWorkout(sessionId: string): Promise<WorkoutSession | null>;
   getActiveWorkouts(): Promise<WorkoutSession[]>;
   pauseWorkout(sessionId: string): Promise<WorkoutSession>;
@@ -33,7 +35,9 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
 
   const reload = (sessionId: string) => getRequiredWorkout(sessionId);
 
-  const start = async (template?: WorkoutTemplate): Promise<WorkoutSession> => {
+  const start = async (template?: WorkoutTemplate, options?: StartWorkoutOptions): Promise<WorkoutSession> => {
+    const active = await store.sessions.getActive();
+    if (active) throw new Error(`An active workout already exists: ${active.id}`);
     const startedAt = Date.now();
     const session: WorkoutSession = {
       id: generateId(),
@@ -43,7 +47,7 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       startedAt,
       sourceType: template ? 'template' : 'quick',
       sourceId: template?.id ?? null,
-      gymId: null,
+      gymId: options?.gymId ?? null,
       visibility: 'private',
       pausedDuration: 0,
       exercises: (template?.exercises ?? []).map(item => ({
@@ -70,11 +74,12 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
   };
 
   return {
-    startQuickWorkout: () => start(),
-    async startWorkoutFromTemplate(templateId) {
+    startQuickWorkout: options => start(undefined, options),
+    async startWorkoutFromTemplate(input) {
+      const templateId = typeof input === 'string' ? input : input.templateId;
       const template = await store.templates.get(templateId);
       if (!template) throw new Error(`Workout template not found: ${templateId}`);
-      return start(template);
+      return start(template, typeof input === 'string' ? undefined : input);
     },
     getWorkout: sessionId => store.sessions.get(sessionId),
     async getActiveWorkouts() {
