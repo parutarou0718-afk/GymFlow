@@ -7,3 +7,5 @@ import type { TargetSet, TemplateExercise, WorkoutTemplate } from '../../types';
 export type Program = WorkoutTemplate;
 export type ProgramExercise = TemplateExercise;
 export type ProgramTargetSet = TargetSet;
+
+export type CreateProgramInput = Pick<Program, 'name' | 'description' | 'exercises'>;

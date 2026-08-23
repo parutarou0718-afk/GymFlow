@@ -7,6 +7,8 @@ import {
   View,
   Text,
   FlatList,
+  Modal,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
@@ -14,6 +16,7 @@ import { colors, spacing, radius, typography, shadows } from '../../lib/theme';
 import { Card, Badge, EmptyState, Divider, Metric } from '../ui';
 import { useStores } from '../../db/stores';
 import { createWorkoutService } from '../../modules/workout';
+import { createProgramInputFromCompletedWorkout, createProgramService } from '../../modules/program';
 import { formatDate, formatShortDate, formatDuration, formatVolume, calculateVolume } from '../../lib/utils';
 import type { WorkoutSession } from '../../modules/workout';
 import { exerciseDB } from '../../lib/exercise-db';
@@ -127,8 +130,12 @@ interface SessionDetailProps {
 export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
   const store = useStores();
   const workoutService = useMemo(() => createWorkoutService(store), [store]);
+  const programService = useMemo(() => createProgramService(store), [store]);
   const [session, setSession] = React.useState<WorkoutSession | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [showSaveProgram, setShowSaveProgram] = React.useState(false);
+  const [programName, setProgramName] = React.useState('');
+  const [savingProgram, setSavingProgram] = React.useState(false);
 
   React.useEffect(() => {
     const load = async () => {
@@ -151,6 +158,20 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
 
   const totalVolume = session.totalVolume || calculateVolume(session.exercises.flatMap(e => e.sets));
   const duration = session.duration || 0;
+  const requestSaveAsProgram = () => {
+    setProgramName(session.templateName || `Workout ${formatDate(session.startedAt)}`);
+    setShowSaveProgram(true);
+  };
+  const saveAsProgram = async () => {
+    if (savingProgram || !programName.trim()) return;
+    setSavingProgram(true);
+    try {
+      await programService.createProgram(createProgramInputFromCompletedWorkout(session, programName));
+      setShowSaveProgram(false);
+    } finally {
+      setSavingProgram(false);
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -175,6 +196,12 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
         {formatDate(session.startedAt)}
       </Text>
 
+      {session.status === 'completed' && (
+        <TouchableOpacity style={styles.saveProgramButton} onPress={requestSaveAsProgram}>
+          <Text style={styles.saveProgramButtonText}>Save as Program</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Exercises */}
       <FlatList
         data={session.exercises}
@@ -193,6 +220,38 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
         )}
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing['4xl'] }}
       />
+
+      <Modal
+        transparent
+        visible={showSaveProgram}
+        animationType="fade"
+        onRequestClose={() => !savingProgram && setShowSaveProgram(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={typography.h3}>Save as Program</Text>
+            <Text style={[typography.bodySmall, { marginTop: spacing.sm }]}>Create an independent copy of this completed workout.</Text>
+            <TextInput
+              style={styles.programNameInput}
+              value={programName}
+              onChangeText={setProgramName}
+              editable={!savingProgram}
+              placeholder="Program name"
+              placeholderTextColor={colors.textMuted}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity disabled={savingProgram} onPress={() => setShowSaveProgram(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity disabled={savingProgram || !programName.trim()} onPress={() => void saveAsProgram()}>
+                <Text style={[styles.saveText, (!programName.trim() || savingProgram) && styles.disabledText]}>
+                  {savingProgram ? 'Saving…' : 'Save'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -243,5 +302,55 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     marginBottom: spacing.md,
+  },
+  saveProgramButton: {
+    alignSelf: 'center',
+    backgroundColor: colors.bgTertiary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  saveProgramButtonText: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  programNameInput: {
+    backgroundColor: colors.bgInput,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    color: colors.text,
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.lg,
+    marginTop: spacing.lg,
+  },
+  cancelText: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  saveText: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  disabledText: {
+    opacity: 0.4,
   },
 });
