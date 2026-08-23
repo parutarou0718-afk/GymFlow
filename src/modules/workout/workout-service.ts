@@ -2,6 +2,8 @@ import { calculateVolume, generateId } from '../../lib/utils';
 import { completeSession, pauseSession, resumeSession } from '../../lib/workout-lifecycle';
 import type { CompletedSet, Exercise, SessionExercise, WorkoutSession, WorkoutSnapshot, WorkoutTemplate } from '../../types';
 import type { WorkoutStore } from './ports';
+import { createUserGymService } from '../user-gym';
+import { DEFAULT_LOCAL_USER_ID } from '../user';
 
 type SetUpdate = { weight?: number; reps?: number; completed?: boolean };
 export type StartWorkoutOptions = { gymId?: string | null };
@@ -27,6 +29,7 @@ export interface WorkoutService {
 }
 
 export function createWorkoutService(store: WorkoutStore): WorkoutService {
+  const userGyms = createUserGymService(store);
   const getRequiredWorkout = async (sessionId: string): Promise<WorkoutSession> => {
     const session = await store.sessions.get(sessionId);
     if (!session) throw new Error(`Workout session not found: ${sessionId}`);
@@ -137,7 +140,11 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
           payload: { totalVolume },
         },
       });
-      return reload(sessionId);
+      const persisted = await reload(sessionId);
+      if (persisted.gymId) {
+        await userGyms.recordGymVisit(DEFAULT_LOCAL_USER_ID, persisted.gymId, persisted.completedAt);
+      }
+      return persisted;
     },
     async discardWorkout(sessionId) {
       await getRequiredWorkout(sessionId);

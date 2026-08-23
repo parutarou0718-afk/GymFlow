@@ -5,6 +5,9 @@ import { resolve } from 'node:path';
 import { createWebStore } from '../src/db/web-store';
 import { exerciseDB } from '../src/lib/exercise-db';
 import { createWorkoutService } from '../src/modules/workout';
+import { createGymService } from '../src/modules/gym';
+import { createUserGymService } from '../src/modules/user-gym';
+import { DEFAULT_LOCAL_USER_ID } from '../src/modules/user';
 
 test('WorkoutService creates, edits, restores, and completes a quick workout through GymFlowStore', async () => {
   const store = createWebStore();
@@ -30,6 +33,18 @@ test('Workout start accepts optional gymId without changing the default null beh
   assert.equal((await service.startQuickWorkout()).gymId, null);
   const scopedService = createWorkoutService(createWebStore());
   assert.equal((await scopedService.startQuickWorkout({ gymId: 'gym-current' })).gymId, 'gym-current');
+});
+
+test('completing a workout at a Gym records one Gym Visit after completion persists', async () => {
+  const store = createWebStore();
+  const gym = await createGymService(store).createGym({ name: 'Visit Gym' });
+  const workout = createWorkoutService(store);
+  const started = await workout.startQuickWorkout({ gymId: gym.id });
+
+  const completed = await workout.finishWorkout(started.id);
+  const relationship = await createUserGymService(store).getUserGymRelationship(DEFAULT_LOCAL_USER_ID, gym.id);
+
+  assert.equal(relationship?.lastVisitedAt, completed.completedAt);
 });
 
 for (const failureStage of ['session', 'snapshot', 'event'] as const) {
