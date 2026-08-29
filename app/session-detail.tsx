@@ -24,6 +24,8 @@ export default function SessionDetailScreen() {
     <SessionDetail
       sessionId={params.sessionId}
       onBack={() => router.back()}
+      onOpenGym={gymId => router.push({ pathname: '/gym-detail' as any, params: { gymId } })}
+      onOpenProgram={programId => router.push({ pathname: '/program-detail' as any, params: { programId } })}
     />
   );
 }

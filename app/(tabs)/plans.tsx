@@ -46,7 +46,7 @@ export default function PlansScreen() {
   };
 
   const handleStart = (template: Program) => {
-    router.push({ pathname: '/active-workout' as any, params: { templateId: template.id } });
+    router.push({ pathname: '/program-detail' as any, params: { programId: template.id } });
   };
 
   const handleDelete = (template: Program) => {
@@ -112,7 +112,7 @@ export default function PlansScreen() {
         data={templateList}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <Card style={styles.templateCard}>
+          <Card style={styles.templateCard} onPress={() => router.push({ pathname: '/program-detail' as any, params: { programId: item.id } })}>
             <View style={styles.templateHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={typography.body}>{item.name}</Text>

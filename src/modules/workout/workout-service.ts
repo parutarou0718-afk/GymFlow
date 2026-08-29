@@ -6,6 +6,7 @@ import { createUserGymService } from '../user-gym';
 import { DEFAULT_LOCAL_USER_ID } from '../user';
 
 type SetUpdate = { weight?: number; reps?: number; completed?: boolean };
+export type ListCompletedWorkoutsOptions = { gymId?: string | null; limit?: number };
 export type StartWorkoutOptions = { gymId?: string | null };
 export type StartWorkoutFromTemplateInput = string | ({ templateId: string } & StartWorkoutOptions);
 
@@ -24,6 +25,7 @@ export interface WorkoutService {
   removeSet(sessionId: string, exerciseId: string, setIndex: number): Promise<WorkoutSession>;
   updateSet(sessionId: string, exerciseId: string, setIndex: number, data: SetUpdate): Promise<WorkoutSession>;
   getWorkoutHistory(): Promise<WorkoutSession[]>;
+  listCompletedWorkouts(options?: ListCompletedWorkoutsOptions): Promise<WorkoutSession[]>;
   getWorkoutHistoryDetail(sessionId: string): Promise<WorkoutSession | null>;
   getWorkoutStats(): Promise<{ workouts: number; volume: number }>;
 }
@@ -183,6 +185,12 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       return reload(sessionId);
     },
     getWorkoutHistory: () => store.sessions.getAll(),
+    async listCompletedWorkouts(options = {}) {
+      if (options.limit != null && (!Number.isInteger(options.limit) || options.limit < 0)) throw new Error('Invalid workout limit');
+      const completed = (await store.sessions.getAll()).filter(item => item.status === 'completed' && (options.gymId === undefined || item.gymId === options.gymId));
+      completed.sort((left, right) => (right.completedAt ?? 0) - (left.completedAt ?? 0) || right.startedAt - left.startedAt || left.id.localeCompare(right.id));
+      return options.limit == null ? completed : completed.slice(0, options.limit);
+    },
     getWorkoutHistoryDetail: sessionId => store.sessions.get(sessionId),
     async getWorkoutStats() {
       const [workouts, volume] = await Promise.all([

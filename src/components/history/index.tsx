@@ -2,7 +2,7 @@
 // GymFlow - Workout History Components
 // ========================================
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { colors, spacing, radius, typography, shadows } from '../../lib/theme';
 import { Card, Badge, EmptyState, Divider, Metric } from '../ui';
 import { useStores } from '../../db/stores';
 import { createWorkoutService } from '../../modules/workout';
+import { createGymService } from '../../modules/gym';
 import { createProgramInputFromCompletedWorkout, createProgramService } from '../../modules/program';
 import { formatDate, formatShortDate, formatDuration, formatVolume, calculateVolume } from '../../lib/utils';
 import type { WorkoutSession } from '../../modules/workout';
@@ -27,6 +28,8 @@ interface HistoryListProps {
 }
 
 export function HistoryList({ sessions, onSelectSession }: HistoryListProps) {
+  const store = useStores(); const gyms = useMemo(() => createGymService(store), [store]); const [gymNames, setGymNames] = useState<Record<string, string>>({});
+  useEffect(() => { void Promise.all([...new Set(sessions.map(x => x.gymId).filter(Boolean) as string[])].map(async id => [id, (await gyms.getGym(id))?.name ?? 'Not available'] as const)).then(items => setGymNames(Object.fromEntries(items))); }, [gyms, sessions]);
   if (sessions.length === 0) {
     return (
       <EmptyState
@@ -60,6 +63,7 @@ export function HistoryList({ sessions, onSelectSession }: HistoryListProps) {
             <HistoryCard
               key={session.id}
               session={session}
+              gymName={session.gymId ? gymNames[session.gymId] : 'No Gym'}
               onPress={() => onSelectSession(session.id)}
             />
           ))}
@@ -74,9 +78,10 @@ export function HistoryList({ sessions, onSelectSession }: HistoryListProps) {
 interface HistoryCardProps {
   session: WorkoutSession;
   onPress: () => void;
+  gymName: string;
 }
 
-function HistoryCard({ session, onPress }: HistoryCardProps) {
+function HistoryCard({ session, onPress, gymName }: HistoryCardProps) {
   const totalVolume = session.totalVolume || calculateVolume(session.exercises.flatMap(e => e.sets));
   const duration = session.duration || 0;
   const exerciseCount = session.exercises.length;
@@ -91,6 +96,7 @@ function HistoryCard({ session, onPress }: HistoryCardProps) {
           <Text style={[typography.caption, { marginTop: 2 }]}>
             {formatDate(session.startedAt)}
           </Text>
+          <Text style={typography.caption}>{gymName}</Text>
         </View>
         <TouchableOpacity onPress={onPress}>
           <Text style={{ color: colors.textMuted, fontSize: 16 }}>›</Text>
@@ -125,17 +131,21 @@ function HistoryCard({ session, onPress }: HistoryCardProps) {
 interface SessionDetailProps {
   sessionId: string;
   onBack: () => void;
+  onOpenGym?: (gymId: string) => void;
+  onOpenProgram?: (programId: string) => void;
 }
 
-export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
+export function SessionDetail({ sessionId, onBack, onOpenGym, onOpenProgram }: SessionDetailProps) {
   const store = useStores();
   const workoutService = useMemo(() => createWorkoutService(store), [store]);
   const programService = useMemo(() => createProgramService(store), [store]);
+  const gymService = useMemo(() => createGymService(store), [store]);
   const [session, setSession] = React.useState<WorkoutSession | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [showSaveProgram, setShowSaveProgram] = React.useState(false);
   const [programName, setProgramName] = React.useState('');
   const [savingProgram, setSavingProgram] = React.useState(false);
+  const [gymName, setGymName] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const load = async () => {
@@ -147,11 +157,12 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
           exercise: ex.exercise || exerciseDB.getById(ex.exerciseId),
         }));
         setSession(s);
+        if (s.gymId) setGymName((await gymService.getGym(s.gymId))?.name ?? null);
       }
       setLoading(false);
     };
     load();
-  }, [sessionId, workoutService]);
+  }, [gymService, sessionId, workoutService]);
 
   if (loading) return null;
   if (!session) return <Text style={{ padding: spacing.lg, color: colors.textSecondary }}>Session not found</Text>;
@@ -195,6 +206,9 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
       <Text style={[typography.caption, { textAlign: 'center', marginBottom: spacing.lg }]}>
         {formatDate(session.startedAt)}
       </Text>
+
+      {session.gymId ? <TouchableOpacity onPress={() => onOpenGym?.(session.gymId!)}><Text style={[typography.caption, { textAlign: 'center', marginBottom: spacing.sm, color: colors.primary }]}>Gym: {gymName ?? 'Not available'}</Text></TouchableOpacity> : <Text style={[typography.caption, { textAlign: 'center', marginBottom: spacing.sm }]}>No Gym</Text>}
+      {session.templateId ? <TouchableOpacity onPress={() => onOpenProgram?.(session.templateId!)}><Text style={[typography.caption, { textAlign: 'center', marginBottom: spacing.sm, color: colors.primary }]}>Source Program: {session.templateName ?? 'Not available'}</Text></TouchableOpacity> : null}
 
       {session.status === 'completed' && (
         <TouchableOpacity style={styles.saveProgramButton} onPress={requestSaveAsProgram}>

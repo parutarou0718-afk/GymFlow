@@ -19,27 +19,42 @@ import { useStores } from '../../src/db/stores';
 import type { WorkoutSession, WorkoutTemplate } from '../../src/types';
 import { createWorkoutService } from '../../src/modules/workout';
 import { createProgramService } from '../../src/modules/program';
+import { createGymService, type Gym } from '../../src/modules/gym';
+import { createGymContextService } from '../../src/modules/gym-context';
+import { createUserGymService, type UserGymRelationship } from '../../src/modules/user-gym';
+import { DEFAULT_LOCAL_USER_ID } from '../../src/modules/user';
 
 export default function HomeScreen() {
   const router = useRouter();
   const store = useStores();
   const workoutApi = useMemo(() => createWorkoutService(store), [store]);
   const programApi = useMemo(() => createProgramService(store), [store]);
+  const gymApi = useMemo(() => createGymService(store), [store]);
+  const contextApi = useMemo(() => createGymContextService(store), [store]);
+  const userGymApi = useMemo(() => createUserGymService(store), [store]);
   const [activeSession, setActiveSession] = useState<WorkoutSession | null>(null);
   const [recentTemplates, setRecentTemplates] = useState<WorkoutTemplate[]>([]);
   const [stats, setStats] = useState({ workouts: 0, volume: 0 });
   const [refreshing, setRefreshing] = useState(false);
+  const [currentGym, setCurrentGym] = useState<Gym | null>(null);
+  const [homeGym, setHomeGym] = useState<UserGymRelationship | null>(null);
+  const [recentGyms, setRecentGyms] = useState<UserGymRelationship[]>([]);
 
   const loadData = useCallback(async () => {
-    const [active, templs, workoutStats] = await Promise.all([
+    const [active, templs, workoutStats, currentGymId, home, recent] = await Promise.all([
       workoutApi.getActiveWorkouts(),
       programApi.listPrograms(),
       workoutApi.getWorkoutStats(),
+      contextApi.getCurrentGym(DEFAULT_LOCAL_USER_ID),
+      userGymApi.getHomeGym(DEFAULT_LOCAL_USER_ID),
+      userGymApi.getRecentGyms(DEFAULT_LOCAL_USER_ID, { limit: 2 }),
     ]);
     setActiveSession(active[0] ?? null);
     setRecentTemplates(templs.slice(0, 5));
     setStats(workoutStats);
-  }, [programApi, workoutApi]);
+    setCurrentGym(currentGymId ? await gymApi.getGym(currentGymId) : null);
+    setHomeGym(home); setRecentGyms(recent);
+  }, [contextApi, gymApi, programApi, userGymApi, workoutApi]);
 
   useFocusEffect(
     useCallback(() => {
@@ -66,6 +81,7 @@ export default function HomeScreen() {
       router.push({ pathname: '/active-workout' as any, params: { sessionId: activeSession.id } });
     }
   };
+  const setCurrent = async (gymId: string) => { await contextApi.setCurrentGym(DEFAULT_LOCAL_USER_ID, gymId); await loadData(); };
 
   return (
     <ScrollView
@@ -85,6 +101,9 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      <SectionHeader title="Current Gym" />
+      {currentGym ? <Card onPress={() => router.push({ pathname: '/gym-detail' as any, params: { gymId: currentGym.id } })}><Text style={typography.body}>{currentGym.name}</Text><Text style={typography.caption}>{currentGym.address || 'Not available'}</Text><Button title="View Gym" onPress={() => router.push({ pathname: '/gym-detail' as any, params: { gymId: currentGym.id } })} /></Card> : <Card><Text style={typography.body}>No Current Gym</Text><Button title="Choose Gym" onPress={() => router.push('/(tabs)/current-gym')} />{homeGym ? <Button title="Use Home Gym" variant="secondary" onPress={() => void setCurrent(homeGym.gymId)} /> : null}{recentGyms.map(item => <Button key={item.gymId} title="Use Recent Gym" variant="secondary" onPress={() => void setCurrent(item.gymId)} />)}</Card>}
+
       {/* Active Session Banner */}
       {activeSession && (
         <Card style={styles.activeBanner}>
@@ -96,6 +115,7 @@ export default function HomeScreen() {
               <Text style={[typography.bodySmall, { marginTop: 2 }]}>
                 {activeSession.templateName || 'Quick Workout'}
               </Text>
+              <Text style={typography.caption}>{activeSession.gymId ? `Gym: ${activeSession.gymId}` : 'No Gym'}</Text>
             </View>
             <TouchableOpacity
               style={styles.resumeButton}
@@ -143,7 +163,7 @@ export default function HomeScreen() {
             <Card
               key={template.id}
               style={styles.templateCard}
-              onPress={() => handleStartWorkout(template)}
+              onPress={() => router.push({ pathname: '/program-detail' as any, params: { programId: template.id } })}
             >
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View>
@@ -154,7 +174,7 @@ export default function HomeScreen() {
                 </View>
                 <TouchableOpacity
                   style={styles.startSmall}
-                  onPress={() => handleStartWorkout(template)}
+                  onPress={() => router.push({ pathname: '/program-detail' as any, params: { programId: template.id } })}
                 >
                   <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 14 }}>Start</Text>
                 </TouchableOpacity>
