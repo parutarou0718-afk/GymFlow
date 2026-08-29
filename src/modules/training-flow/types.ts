@@ -6,6 +6,7 @@ import type { ProgramAdaptationService } from '../program-adaptation';
 import type { ProgramGymMatchResult, ProgramMatchingService } from '../program-matching';
 import type { UserService } from '../user';
 import type { WorkoutService } from '../workout';
+import type { ReplacementReview } from '../replacement-review';
 
 export interface TrainingFlowDependencies {
   users: Pick<UserService, 'getUser'>;
@@ -29,5 +30,6 @@ export interface MatchProgramForCurrentGymInput extends CurrentGymInput { progra
 export interface AdaptProgramForCurrentGymInput extends MatchProgramForCurrentGymInput { name?: string; }
 export interface StartProgramWorkoutInput extends MatchProgramForCurrentGymInput {}
 export interface StartQuickWorkoutInput extends CurrentGymInput {}
+export interface CreateAdaptedProgramFromReviewInput extends CurrentGymInput { review: ReplacementReview; name?: string; }
 
 export type { Program, ProgramGymMatchResult };

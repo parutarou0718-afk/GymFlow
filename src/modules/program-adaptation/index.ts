@@ -1,2 +1,2 @@
 export { createProgramAdaptationService } from './program-adaptation-service';
-export type { CreateAdaptedProgramInput, ProgramAdaptationDependencies, ProgramAdaptationService } from './types';
+export type { AdaptationDecision, CreateAdaptedProgramInput, ProgramAdaptationDependencies, ProgramAdaptationService } from './types';

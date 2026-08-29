@@ -1,4 +1,5 @@
 import type { Gym } from '../gym';
+import { createReplacementReviewService } from '../replacement-review';
 import type { TrainingFlowDependencies, CurrentGymTrainingState, CurrentGymInput, MatchProgramForCurrentGymInput, AdaptProgramForCurrentGymInput, StartProgramWorkoutInput, StartQuickWorkoutInput } from './types';
 
 export interface TrainingFlowService {
@@ -7,6 +8,7 @@ export interface TrainingFlowService {
   createAdaptedProgramForCurrentGym(input: AdaptProgramForCurrentGymInput): ReturnType<TrainingFlowDependencies['programAdaptation']['createAdaptedProgram']>;
   startProgramWorkoutAtCurrentGym(input: StartProgramWorkoutInput): ReturnType<TrainingFlowDependencies['workouts']['startWorkoutFromTemplate']>;
   startQuickWorkoutAtCurrentGym(input: StartQuickWorkoutInput): ReturnType<TrainingFlowDependencies['workouts']['startQuickWorkout']>;
+  createAdaptedProgramFromReview(input: import('./types').CreateAdaptedProgramFromReviewInput): ReturnType<TrainingFlowDependencies['programAdaptation']['createAdaptedProgram']>;
 }
 
 export function createTrainingFlowService(dependencies: TrainingFlowDependencies): TrainingFlowService {
@@ -46,6 +48,25 @@ export function createTrainingFlowService(dependencies: TrainingFlowDependencies
     async startQuickWorkoutAtCurrentGym(input) {
       const gym = await resolveCurrentGym(input);
       return dependencies.workouts.startQuickWorkout({ gymId: gym.id });
+    },
+    async createAdaptedProgramFromReview(input) {
+      const gym = await resolveCurrentGym(input);
+      const review = input.review;
+      if (review.gymId !== gym.id) throw new Error('CURRENT_GYM_CHANGED');
+      const program = await dependencies.programs.getProgram(review.programId);
+      if (!program) throw new Error('PROGRAM_NOT_FOUND');
+      if (program.updatedAt !== review.programUpdatedAt) throw new Error('PROGRAM_CHANGED');
+      const currentMatch = await dependencies.programMatching.matchProgramToGym({ programId: program.id, gymId: gym.id, includeAlternatives: true });
+      const refreshed = createReplacementReviewService().createReplacementReview({ matchResult: currentMatch, programUpdatedAt: program.updatedAt });
+      const decisions = review.items.map(item => {
+        const decision = item.decision;
+        if (decision.status !== 'selected') throw new Error(decision.status === 'unresolved' ? 'NO_REPLACEMENT_AVAILABLE' : 'REVIEW_INCOMPLETE');
+        const next = refreshed.items.find(value => value.programExerciseKey === item.programExerciseKey);
+        if (!next || !next.options.some(option => option.exerciseId === decision.replacementExerciseId)) throw new Error('MATCH_RESULT_CHANGED');
+        return { programExerciseId: item.programExerciseKey, replacementExerciseId: decision.replacementExerciseId };
+      });
+      if (refreshed.items.length !== review.items.length) throw new Error('MATCH_RESULT_CHANGED');
+      return dependencies.programAdaptation.createAdaptedProgram({ programId: program.id, matchResult: currentMatch, decisions, name: input.name });
     },
   };
 }
