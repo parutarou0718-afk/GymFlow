@@ -25,6 +25,7 @@ export interface Exercise {
 // A template represents a planned workout (e.g., "Push Day")
 export interface WorkoutTemplate {
   id: UUID;
+  ownerUserId?: UUID;
   name: string;
   description?: string;
   exercises: TemplateExercise[];
@@ -55,6 +56,7 @@ export type WorkoutVisibility = 'private' | 'followers' | 'public';
 
 export interface WorkoutSession {
   id: UUID;
+  ownerUserId?: UUID;
   templateId: UUID | null; // null if started without template
   templateName?: string; // snapshot name
   status: SessionStatus;

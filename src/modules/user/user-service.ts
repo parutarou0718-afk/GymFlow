@@ -70,6 +70,7 @@ function nextUpdatedAt(current: UserProfile): number {
 export interface UserService {
   getCurrentUser(): Promise<UserProfile>;
   getUser(userId: string): Promise<UserProfile | null>;
+  getPublicUserSummary(userId: string): Promise<{ id: string; displayName: string; avatarUri: string | null } | null>;
   listUsers(): Promise<UserProfile[]>;
   createUser(input: CreateUserInput): Promise<UserProfile>;
   updateUser(userId: string, patch: UpdateUserInput): Promise<UserProfile>;
@@ -89,6 +90,10 @@ export function createUserService(store: UserStorePort): UserService {
       return defaultUser;
     },
     getUser: userId => store.users.get(userId),
+    async getPublicUserSummary(userId) {
+      const user = await store.users.get(userId);
+      return user?.status === 'active' ? { id: user.id, displayName: user.displayName, avatarUri: user.avatarUri ?? null } : null;
+    },
     listUsers: () => store.users.list(),
     async createUser(input) {
       const user = normalizeInput(input, generateId(), Date.now());

@@ -25,6 +25,7 @@ import { createDefaultUser } from '../modules/user';
 import type { UserGymRelationship } from '../modules/user-gym';
 import type { ExternalGymLink } from '../modules/gym-discovery';
 import type { GymContext } from '../modules/gym-context';
+import type { SocialComment, SocialFollow, SocialLike, SocialPost, SavedPost } from '../modules/social';
 
 const DAY = 24 * 60 * 60 * 1000;
 const DEMO_NOW = new Date('2026-08-20T18:00:00.000Z').getTime();
@@ -156,8 +157,8 @@ function createQueueId(): string {
 }
 
 export function createWebStore(): GymFlowStore {
-  let templates = clone(seedTemplates);
-  let sessions = clone(seedSessions);
+  let templates: WorkoutTemplate[] = clone(seedTemplates).map(item => ({ ...item, ownerUserId: 'local_default_user' }));
+  let sessions: WorkoutSession[] = clone(seedSessions).map(item => ({ ...item, ownerUserId: 'local_default_user' }));
   let syncQueue: SyncQueueItem[] = [];
   let events: WorkoutDomainEvent[] = [];
   let gyms: Gym[] = [];
@@ -173,6 +174,11 @@ export function createWebStore(): GymFlowStore {
   let userGyms: UserGymRelationship[] = [];
   let gymContexts: GymContext[] = [];
   let gymExternalLinks: ExternalGymLink[] = [];
+  let socialPosts: SocialPost[] = [];
+  let socialFollows: SocialFollow[] = [];
+  let socialLikes: SocialLike[] = [];
+  let socialComments: SocialComment[] = [];
+  let savedPosts: SavedPost[] = [];
 
   return {
     sessions: {
@@ -437,6 +443,24 @@ export function createWebStore(): GymFlowStore {
       async get(userId) { const context = gymContexts.find(item => item.userId === userId); return context ? clone(context) : null; },
       async set(context) { const index = gymContexts.findIndex(item => item.userId === context.userId); if (index >= 0) gymContexts[index] = clone(context); else gymContexts.push(clone(context)); },
       async clear(userId, updatedAt) { const index = gymContexts.findIndex(item => item.userId === userId); const context = { userId, currentGymId: null, selectedAt: null, updatedAt }; if (index >= 0) gymContexts[index] = context; else gymContexts.push(context); },
+    },
+    social: {
+      async createPost(post) { socialPosts.push(clone(post)); },
+      async updatePost(post) { const index = socialPosts.findIndex(item => item.id === post.id); if (index >= 0) socialPosts[index] = clone(post); },
+      async getPost(id) { const post = socialPosts.find(item => item.id === id); return post ? clone(post) : null; },
+      async listPosts() { return socialPosts.map(clone); },
+      async createFollow(item) { if (!socialFollows.some(value => value.followerUserId === item.followerUserId && value.followedUserId === item.followedUserId)) socialFollows.push(clone(item)); },
+      async deleteFollow(followerUserId, followedUserId) { socialFollows = socialFollows.filter(item => item.followerUserId !== followerUserId || item.followedUserId !== followedUserId); },
+      async listFollows() { return socialFollows.map(clone); },
+      async createLike(item) { if (!socialLikes.some(value => value.userId === item.userId && value.postId === item.postId)) socialLikes.push(clone(item)); },
+      async deleteLike(userId, postId) { socialLikes = socialLikes.filter(item => item.userId !== userId || item.postId !== postId); },
+      async listLikes() { return socialLikes.map(clone); },
+      async createComment(item) { socialComments.push(clone(item)); },
+      async updateComment(item) { const index = socialComments.findIndex(value => value.id === item.id); if (index >= 0) socialComments[index] = clone(item); },
+      async listComments(postId) { return socialComments.filter(item => item.postId === postId).map(clone); },
+      async createSavedPost(item) { if (!savedPosts.some(value => value.userId === item.userId && value.postId === item.postId)) savedPosts.push(clone(item)); },
+      async deleteSavedPost(userId, postId) { savedPosts = savedPosts.filter(item => item.userId !== userId || item.postId !== postId); },
+      async listSavedPosts(userId) { return savedPosts.filter(item => item.userId === userId).map(clone); },
     },
   };
 }

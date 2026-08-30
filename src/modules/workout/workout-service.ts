@@ -3,7 +3,7 @@ import { completeSession, pauseSession, resumeSession } from '../../lib/workout-
 import type { CompletedSet, Exercise, SessionExercise, WorkoutReplacementReason, WorkoutSession, WorkoutSnapshot, WorkoutTemplate } from '../../types';
 import type { WorkoutStore } from './ports';
 import { createUserGymService } from '../user-gym';
-import { DEFAULT_LOCAL_USER_ID } from '../user';
+import { createUserService, DEFAULT_LOCAL_USER_ID } from '../user';
 
 type SetUpdate = { weight?: number; reps?: number; completed?: boolean };
 export type ListCompletedWorkoutsOptions = { gymId?: string | null; limit?: number };
@@ -21,6 +21,7 @@ export interface WorkoutService {
   startQuickWorkout(options?: StartWorkoutOptions): Promise<WorkoutSession>;
   startWorkoutFromTemplate(input: StartWorkoutFromTemplateInput): Promise<WorkoutSession>;
   getWorkout(sessionId: string): Promise<WorkoutSession | null>;
+  getWorkoutShareSummary(sessionId: string): Promise<{ id: string; date: number; duration: number; exerciseCount: number; volume: number; gymId: string | null } | null>;
   getActiveWorkouts(): Promise<WorkoutSession[]>;
   pauseWorkout(sessionId: string): Promise<WorkoutSession>;
   resumeWorkout(sessionId: string): Promise<WorkoutSession>;
@@ -52,8 +53,10 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
     const active = await store.sessions.getActive();
     if (active) throw new Error(`An active workout already exists: ${active.id}`);
     const startedAt = Date.now();
+    const owner = await createUserService(store).getCurrentUser();
     const session: WorkoutSession = {
       id: generateId(),
+      ownerUserId: owner.id,
       templateId: template?.id ?? null,
       templateName: template?.name ?? 'Quick Workout',
       status: 'active',
@@ -95,6 +98,10 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       return start(template, typeof input === 'string' ? undefined : input);
     },
     getWorkout: sessionId => store.sessions.get(sessionId),
+    async getWorkoutShareSummary(sessionId) {
+      const session = await store.sessions.get(sessionId);
+      return session ? { id: session.id, date: session.completedAt ?? session.startedAt, duration: session.duration ?? 0, exerciseCount: session.exercises.length, volume: session.totalVolume ?? 0, gymId: session.gymId ?? null } : null;
+    },
     async getActiveWorkouts() {
       const active = await store.sessions.getActive();
       return active ? [active] : [];

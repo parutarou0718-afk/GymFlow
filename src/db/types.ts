@@ -26,6 +26,7 @@ import type { UserProfile } from '../modules/user';
 import type { UserGymRelationship } from '../modules/user-gym';
 import type { ExternalGymLink } from '../modules/gym-discovery';
 import type { GymContext } from '../modules/gym-context';
+import type { SocialComment, SocialFollow, SocialLike, SocialPost, SavedPost } from '../modules/social';
 
 // ── Session Store ──
 
@@ -100,6 +101,13 @@ export interface WorkoutCompletionInput {
 export interface WorkoutCompletionStore {
   complete(input: WorkoutCompletionInput): Promise<void>;
 }
+export interface SocialStore {
+  createPost(post: SocialPost): Promise<void>; updatePost(post: SocialPost): Promise<void>; getPost(id: string): Promise<SocialPost | null>; listPosts(): Promise<SocialPost[]>;
+  createFollow(item: SocialFollow): Promise<void>; deleteFollow(followerUserId: string, followedUserId: string): Promise<void>; listFollows(): Promise<SocialFollow[]>;
+  createLike(item: SocialLike): Promise<void>; deleteLike(userId: string, postId: string): Promise<void>; listLikes(): Promise<SocialLike[]>;
+  createComment(item: SocialComment): Promise<void>; updateComment(item: SocialComment): Promise<void>; listComments(postId: string): Promise<SocialComment[]>;
+  createSavedPost(item: SavedPost): Promise<void>; deleteSavedPost(userId: string, postId: string): Promise<void>; listSavedPosts(userId: string): Promise<SavedPost[]>;
+}
 
 export interface UserStore { create(user: UserProfile): Promise<void>; get(id: UUID): Promise<UserProfile | null>; list(): Promise<UserProfile[]>; update(user: UserProfile): Promise<void>; }
 export interface UserGymStore { get(userId: UUID, gymId: UUID): Promise<UserGymRelationship | null>; listByUser(userId: UUID): Promise<UserGymRelationship[]>; upsert(item: UserGymRelationship): Promise<void>; delete(userId: UUID, gymId: UUID): Promise<void>; setHome(item: UserGymRelationship): Promise<void>; clearHome(userId: UUID): Promise<void>; }
@@ -138,6 +146,7 @@ export interface GymFlowStore {
   users: UserStore;
   userGyms: UserGymStore;
   gymContexts: GymContextStore;
+  social: SocialStore;
 }
 // 注: 此文件为存储层接口定义，所有业务层代码应依赖此接口而非 database.ts 实现。
 // 如需切换存储实现（如 SQLite → Supabase），只需新建实现文件并在 stores.tsx 中更换即可。

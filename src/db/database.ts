@@ -31,6 +31,7 @@ import { createDefaultUser } from '../modules/user';
 import type { GymContext } from '../modules/gym-context';
 import type { UserGymRelationship } from '../modules/user-gym';
 import type { ExternalGymLink } from '../modules/gym-discovery';
+import type { SavedPost, SocialComment, SocialFollow, SocialLike, SocialPost } from '../modules/social';
 import { applySqliteMigrationLedger } from './migrations';
 
 // --- Database Singleton ---
@@ -259,6 +260,8 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
     'INSERT OR IGNORE INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
     [defaultUser.id, defaultUser.displayName, defaultUser.avatarUri ?? null, defaultUser.experienceLevel, JSON.stringify(defaultUser.trainingGoals), JSON.stringify(defaultUser.preferences), JSON.stringify(defaultUser.privacy), defaultUser.status, defaultUser.createdAt, defaultUser.updatedAt],
   );
+  await database.runAsync("UPDATE sessions SET owner_user_id = 'local_default_user' WHERE owner_user_id IS NULL");
+  await database.runAsync("UPDATE templates SET owner_user_id = 'local_default_user' WHERE owner_user_id IS NULL");
 }
 
 // ========================================
@@ -344,9 +347,9 @@ export async function createTemplate(template: WorkoutTemplate): Promise<void> {
   const snapshot = JSON.stringify(template);
 
   await database.runAsync(
-    `INSERT OR REPLACE INTO templates (id, name, description, snapshot, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [template.id, template.name, template.description || '', snapshot, template.createdAt, template.updatedAt]
+    `INSERT OR REPLACE INTO templates (id, name, description, snapshot, owner_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [template.id, template.name, template.description || '', snapshot, template.ownerUserId ?? null, template.createdAt, template.updatedAt]
   );
 }
 
@@ -355,8 +358,8 @@ export async function updateTemplate(template: WorkoutTemplate): Promise<void> {
   const snapshot = JSON.stringify(template);
 
   await database.runAsync(
-    `UPDATE templates SET name = ?, description = ?, snapshot = ?, updated_at = ? WHERE id = ?`,
-    [template.name, template.description || '', snapshot, template.updatedAt, template.id]
+    `UPDATE templates SET name = ?, description = ?, snapshot = ?, owner_user_id = ?, updated_at = ? WHERE id = ?`,
+    [template.name, template.description || '', snapshot, template.ownerUserId ?? null, template.updatedAt, template.id]
   );
 }
 
@@ -367,19 +370,19 @@ export async function deleteTemplate(id: UUID): Promise<void> {
 
 export async function getTemplate(id: UUID): Promise<WorkoutTemplate | null> {
   const database = await getDatabase();
-  const row = await database.getFirstAsync<{ snapshot: string }>(
-    'SELECT snapshot FROM templates WHERE id = ?',
+  const row = await database.getFirstAsync<{ snapshot: string; owner_user_id: string | null }>(
+    'SELECT snapshot, owner_user_id FROM templates WHERE id = ?',
     [id]
   );
-  return row ? JSON.parse(row.snapshot) : null;
+  return row ? { ...JSON.parse(row.snapshot), ownerUserId: row.owner_user_id ?? undefined } : null;
 }
 
 export async function getAllTemplates(): Promise<WorkoutTemplate[]> {
   const database = await getDatabase();
-  const rows = await database.getAllAsync<{ snapshot: string }>(
-    'SELECT snapshot FROM templates ORDER BY updated_at DESC'
+  const rows = await database.getAllAsync<{ snapshot: string; owner_user_id: string | null }>(
+    'SELECT snapshot, owner_user_id FROM templates ORDER BY updated_at DESC'
   );
-  return rows.map(r => JSON.parse(r.snapshot));
+  return rows.map(r => ({ ...JSON.parse(r.snapshot), ownerUserId: r.owner_user_id ?? undefined }));
 }
 
 // ========================================
@@ -391,10 +394,11 @@ export async function createSession(session: WorkoutSession): Promise<void> {
   const now = Date.now();
 
   await database.runAsync(
-    `INSERT INTO sessions (id, template_id, template_name, gym_id, status, started_at, finished_at, completed_at, paused_at, duration, paused_duration, total_volume, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, owner_user_id, template_id, template_name, gym_id, status, started_at, finished_at, completed_at, paused_at, duration, paused_duration, total_volume, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       session.id,
+      session.ownerUserId ?? null,
       session.templateId,
       session.templateName || null,
       session.gymId ?? null,
@@ -532,6 +536,7 @@ export async function getSession(id: UUID): Promise<WorkoutSession | null> {
 
   return {
     id: sessionRow.id,
+    ownerUserId: sessionRow.owner_user_id ?? undefined,
     templateId: sessionRow.template_id,
     templateName: sessionRow.template_name || undefined,
     gymId: sessionRow.gym_id ?? null,
@@ -844,6 +849,32 @@ export async function listExerciseSubstitutionsToTarget(id: UUID): Promise<Exerc
 export async function updateExerciseSubstitution(item: ExerciseSubstitution): Promise<void> { await (await getDatabase()).runAsync('UPDATE exercise_substitutions SET quality=?,reason=?,status=?,updated_at=? WHERE id=?', [item.quality,item.reason ?? null,item.status,item.updatedAt,item.id]); }
 
 // ========================================
+// Social Core CRUD
+// ========================================
+
+function mapSocialPost(row: any): SocialPost { return { id: row.id, authorUserId: row.author_user_id, content: row.content, workoutSessionId: row.workout_session_id ?? null, programId: row.program_id ?? null, gymId: row.gym_id ?? null, visibility: row.visibility, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapSocialFollow(row: any): SocialFollow { return { followerUserId: row.follower_user_id, followedUserId: row.followed_user_id, createdAt: row.created_at }; }
+function mapSocialLike(row: any): SocialLike { return { userId: row.user_id, postId: row.post_id, createdAt: row.created_at }; }
+function mapSocialComment(row: any): SocialComment { return { id: row.id, postId: row.post_id, authorUserId: row.author_user_id, content: row.content, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapSavedPost(row: any): SavedPost { return { userId: row.user_id, postId: row.post_id, createdAt: row.created_at }; }
+export async function createSocialPost(item: SocialPost): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO social_posts (id,author_user_id,content,workout_session_id,program_id,gym_id,visibility,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', [item.id,item.authorUserId,item.content,item.workoutSessionId ?? null,item.programId ?? null,item.gymId ?? null,item.visibility,item.status,item.createdAt,item.updatedAt]); }
+export async function updateSocialPost(item: SocialPost): Promise<void> { await (await getDatabase()).runAsync('UPDATE social_posts SET content=?,visibility=?,status=?,updated_at=? WHERE id=?', [item.content,item.visibility,item.status,item.updatedAt,item.id]); }
+export async function getSocialPost(id: string): Promise<SocialPost | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM social_posts WHERE id=?', [id]); return row ? mapSocialPost(row) : null; }
+export async function listSocialPosts(): Promise<SocialPost[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM social_posts')).map(mapSocialPost); }
+export async function createSocialFollow(item: SocialFollow): Promise<void> { await (await getDatabase()).runAsync('INSERT OR IGNORE INTO social_follows (follower_user_id,followed_user_id,created_at) VALUES (?,?,?)', [item.followerUserId,item.followedUserId,item.createdAt]); }
+export async function deleteSocialFollow(followerUserId: string, followedUserId: string): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM social_follows WHERE follower_user_id=? AND followed_user_id=?', [followerUserId,followedUserId]); }
+export async function listSocialFollows(): Promise<SocialFollow[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM social_follows')).map(mapSocialFollow); }
+export async function createSocialLike(item: SocialLike): Promise<void> { await (await getDatabase()).runAsync('INSERT OR IGNORE INTO social_likes (user_id,post_id,created_at) VALUES (?,?,?)', [item.userId,item.postId,item.createdAt]); }
+export async function deleteSocialLike(userId: string, postId: string): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM social_likes WHERE user_id=? AND post_id=?', [userId,postId]); }
+export async function listSocialLikes(): Promise<SocialLike[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM social_likes')).map(mapSocialLike); }
+export async function createSocialComment(item: SocialComment): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO social_comments (id,post_id,author_user_id,content,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)', [item.id,item.postId,item.authorUserId,item.content,item.status,item.createdAt,item.updatedAt]); }
+export async function updateSocialComment(item: SocialComment): Promise<void> { await (await getDatabase()).runAsync('UPDATE social_comments SET content=?,status=?,updated_at=? WHERE id=?', [item.content,item.status,item.updatedAt,item.id]); }
+export async function listSocialComments(postId: string): Promise<SocialComment[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM social_comments WHERE post_id=?', [postId])).map(mapSocialComment); }
+export async function createSavedSocialPost(item: SavedPost): Promise<void> { await (await getDatabase()).runAsync('INSERT OR IGNORE INTO social_saved_posts (user_id,post_id,created_at) VALUES (?,?,?)', [item.userId,item.postId,item.createdAt]); }
+export async function deleteSavedSocialPost(userId: string, postId: string): Promise<void> { await (await getDatabase()).runAsync('DELETE FROM social_saved_posts WHERE user_id=? AND post_id=?', [userId,postId]); }
+export async function listSavedSocialPosts(userId: string): Promise<SavedPost[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM social_saved_posts WHERE user_id=?', [userId])).map(mapSavedPost); }
+
+// ========================================
 // Store Factory - wraps all functions into a GymFlowStore interface
 // ========================================
 
@@ -901,6 +932,13 @@ export function createStore(): GymFlowStore {
     users: { create: createUser, get: getUser, list: listUsers, update: updateUser },
     userGyms: { get: getUserGymRelationship, listByUser: listUserGymRelationships, upsert: upsertUserGymRelationship, delete: deleteUserGymRelationship, setHome: setUserGymHome, clearHome: clearUserGymHome },
     gymContexts: { get: getGymContext, set: setGymContext, clear: clearGymContext },
+    social: {
+      createPost: createSocialPost, updatePost: updateSocialPost, getPost: getSocialPost, listPosts: listSocialPosts,
+      createFollow: createSocialFollow, deleteFollow: deleteSocialFollow, listFollows: listSocialFollows,
+      createLike: createSocialLike, deleteLike: deleteSocialLike, listLikes: listSocialLikes,
+      createComment: createSocialComment, updateComment: updateSocialComment, listComments: listSocialComments,
+      createSavedPost: createSavedSocialPost, deleteSavedPost: deleteSavedSocialPost, listSavedPosts: listSavedSocialPosts,
+    },
   };
 
   return _store;

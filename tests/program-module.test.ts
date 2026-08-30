@@ -4,6 +4,8 @@ import test from 'node:test';
 import { resolve } from 'node:path';
 import { createWebStore } from '../src/db/web-store';
 import { createProgramInputFromCompletedWorkout, createProgramService } from '../src/modules/program';
+import { createWorkoutService } from '../src/modules/workout';
+import { DEFAULT_LOCAL_USER_ID } from '../src/modules/user';
 
 test('ProgramService preserves existing IDs while delegating CRUD to template persistence', async () => {
   const service = createProgramService(createWebStore());
@@ -16,6 +18,19 @@ test('ProgramService preserves existing IDs while delegating CRUD to template pe
   assert.ok(created.id);
   assert.equal((await service.getProgram(created.id))?.name, 'Push');
   assert.equal((await service.listPrograms()).some(item => item.id === created.id), true);
+});
+
+test('M19 assigns the current user as owner for newly created Programs and Workouts', async () => {
+  const store = createWebStore();
+  const programs = createProgramService(store);
+  const workouts = createWorkoutService(store);
+  const program = await programs.createProgram({ name: 'Owned', description: '', exercises: [] });
+  const workout = await workouts.startQuickWorkout();
+
+  assert.equal(program.ownerUserId, DEFAULT_LOCAL_USER_ID);
+  assert.equal(workout.ownerUserId, DEFAULT_LOCAL_USER_ID);
+  assert.equal((await programs.listPrograms()).every(item => item.ownerUserId === DEFAULT_LOCAL_USER_ID), true);
+  assert.equal((await store.sessions.getAll()).every(item => item.ownerUserId === DEFAULT_LOCAL_USER_ID), true);
 });
 
 test('Plans and template form use the Program public API instead of store.templates', async () => {

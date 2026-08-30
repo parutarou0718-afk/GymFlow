@@ -10,7 +10,7 @@ export interface Migration {
   up(): Promise<void>;
 }
 
-export const LATEST_SCHEMA_VERSION = 8;
+export const LATEST_SCHEMA_VERSION = 10;
 const COMPATIBILITY_BASELINE_VERSION = 6;
 
 export async function runMigrationLedger(adapter: MigrationLedgerAdapter, migrations: Migration[]): Promise<number[]> {
@@ -141,6 +141,73 @@ function sqliteMigrations(database: MigrationDatabase): Migration[] {
         await ensureColumn(database, 'session_exercises', 'replacement_reason', 'TEXT');
         await ensureColumn(database, 'session_exercises', 'replacement_occurred_at', 'INTEGER');
       },
+    },
+    {
+      version: 9,
+      name: 'social-ownership-columns',
+      up: async () => {
+        await ensureColumn(database, 'sessions', 'owner_user_id', 'TEXT');
+        await ensureColumn(database, 'templates', 'owner_user_id', 'TEXT');
+        await database.runAsync("UPDATE sessions SET owner_user_id = 'local_default_user' WHERE owner_user_id IS NULL");
+        await database.runAsync("UPDATE templates SET owner_user_id = 'local_default_user' WHERE owner_user_id IS NULL");
+      },
+    },
+    {
+      version: 10,
+      name: 'social-core',
+      up: () => database.execAsync(`
+        CREATE TABLE IF NOT EXISTS social_posts (
+          id TEXT PRIMARY KEY,
+          author_user_id TEXT NOT NULL,
+          content TEXT NOT NULL,
+          workout_session_id TEXT,
+          program_id TEXT,
+          gym_id TEXT,
+          visibility TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY(author_user_id) REFERENCES users(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS social_follows (
+          follower_user_id TEXT NOT NULL,
+          followed_user_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY(follower_user_id, followed_user_id),
+          FOREIGN KEY(follower_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+          FOREIGN KEY(followed_user_id) REFERENCES users(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS social_likes (
+          user_id TEXT NOT NULL,
+          post_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY(user_id, post_id),
+          FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT,
+          FOREIGN KEY(post_id) REFERENCES social_posts(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS social_comments (
+          id TEXT PRIMARY KEY,
+          post_id TEXT NOT NULL,
+          author_user_id TEXT NOT NULL,
+          content TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY(post_id) REFERENCES social_posts(id) ON DELETE RESTRICT,
+          FOREIGN KEY(author_user_id) REFERENCES users(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS social_saved_posts (
+          user_id TEXT NOT NULL,
+          post_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY(user_id, post_id),
+          FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT,
+          FOREIGN KEY(post_id) REFERENCES social_posts(id) ON DELETE RESTRICT
+        );
+        CREATE INDEX IF NOT EXISTS idx_social_posts_feed ON social_posts(created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_social_posts_author ON social_posts(author_user_id, created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_social_comments_post ON social_comments(post_id, created_at ASC, id ASC);
+      `),
     },
   ];
 }
