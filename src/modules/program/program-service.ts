@@ -8,6 +8,7 @@ export interface ProgramService {
   getProgram(id: string): Promise<Program | null>;
   getProgramShareSummary(id: string): Promise<{ id: string; name: string; description: string; exerciseCount: number } | null>;
   createProgram(input: CreateProgramInput): Promise<Program>;
+  copyProgram(input: { sourceProgramId: string; newOwnerUserId: string; name?: string }): Promise<Program>;
   updateProgram(program: Program): Promise<Program>;
   deleteProgram(id: string): Promise<void>;
 }
@@ -32,6 +33,24 @@ export function createProgramService(store: ProgramStore): ProgramService {
       };
       await store.templates.create(program);
       return program;
+    },
+    async copyProgram(input) {
+      const source = await store.templates.get(input.sourceProgramId);
+      if (!source) throw new Error('PROGRAM_NOT_FOUND');
+      const owner = await createUserService(store).getUser(input.newOwnerUserId);
+      if (!owner || owner.status !== 'active') throw new Error('USER_NOT_AVAILABLE');
+      const now = Date.now();
+      const copy: Program = {
+        ...source,
+        id: generateId(),
+        ownerUserId: input.newOwnerUserId,
+        name: input.name?.trim() || `${source.name} — Copy`,
+        exercises: source.exercises.map(exercise => ({ ...exercise, id: generateId(), targetSets: exercise.targetSets.map(set => ({ ...set })) })),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await store.templates.create(copy);
+      return copy;
     },
     async updateProgram(program) {
       await store.templates.update(program);

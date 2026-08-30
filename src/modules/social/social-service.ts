@@ -102,9 +102,27 @@ export function createSocialService(store: GymFlowStore) {
     },
     async unfollowUser(input: Omit<SocialFollow, 'createdAt'>): Promise<void> { await store.social.deleteFollow(input.followerUserId, input.followedUserId); },
     async isFollowing(input: Omit<SocialFollow, 'createdAt'>): Promise<boolean> { return isFollowing(input.followerUserId, input.followedUserId); },
+    async listFollowerRelationships(userId: string): Promise<SocialFollow[]> {
+      return (await store.social.listFollows())
+        .filter(item => item.followedUserId === userId)
+        .sort((left, right) => right.createdAt - left.createdAt || left.followerUserId.localeCompare(right.followerUserId));
+    },
+    async listFollowingRelationships(userId: string): Promise<SocialFollow[]> {
+      return (await store.social.listFollows())
+        .filter(item => item.followerUserId === userId)
+        .sort((left, right) => right.createdAt - left.createdAt || left.followedUserId.localeCompare(right.followedUserId));
+    },
     async listPostsByUser(input: { userId: string; viewerUserId: string }): Promise<SocialPost[]> {
       const visible = await Promise.all((await store.social.listPosts()).filter(post => post.authorUserId === input.userId).map(async post => await canRead(post, input.viewerUserId) ? post : null));
       return visible.filter((post): post is SocialPost => post != null).sort(compareNewest);
+    },
+    async canViewerAccessProgramShare(input: { viewerUserId: string; programId: string }): Promise<boolean> {
+      const candidates = (await store.social.listPosts()).filter(post => post.programId === input.programId);
+      return (await Promise.all(candidates.map(post => canRead(post, input.viewerUserId)))).some(Boolean);
+    },
+    async canViewerAccessWorkoutShare(input: { viewerUserId: string; workoutSessionId: string }): Promise<boolean> {
+      const candidates = (await store.social.listPosts()).filter(post => post.workoutSessionId === input.workoutSessionId);
+      return (await Promise.all(candidates.map(post => canRead(post, input.viewerUserId)))).some(Boolean);
     },
     async likePost(input: { userId: string; postId: string }): Promise<void> { await requireActiveUser(input.userId); await requireReadable(input.postId, input.userId); await store.social.createLike({ ...input, createdAt: Date.now() }); },
     async unlikePost(input: { userId: string; postId: string }): Promise<void> { await store.social.deleteLike(input.userId, input.postId); },
