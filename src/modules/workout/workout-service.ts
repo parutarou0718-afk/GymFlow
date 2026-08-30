@@ -1,6 +1,6 @@
 import { calculateVolume, generateId } from '../../lib/utils';
 import { completeSession, pauseSession, resumeSession } from '../../lib/workout-lifecycle';
-import type { CompletedSet, Exercise, SessionExercise, WorkoutSession, WorkoutSnapshot, WorkoutTemplate } from '../../types';
+import type { CompletedSet, Exercise, SessionExercise, WorkoutReplacementReason, WorkoutSession, WorkoutSnapshot, WorkoutTemplate } from '../../types';
 import type { WorkoutStore } from './ports';
 import { createUserGymService } from '../user-gym';
 import { DEFAULT_LOCAL_USER_ID } from '../user';
@@ -9,6 +9,13 @@ type SetUpdate = { weight?: number; reps?: number; completed?: boolean };
 export type ListCompletedWorkoutsOptions = { gymId?: string | null; limit?: number };
 export type StartWorkoutOptions = { gymId?: string | null };
 export type StartWorkoutFromTemplateInput = string | ({ templateId: string } & StartWorkoutOptions);
+export interface ReplaceWorkoutExerciseInput {
+  sessionId: string;
+  sessionExerciseId: string;
+  replacementExerciseId: string;
+  reason: WorkoutReplacementReason;
+  expectedCompletedSetCount: number;
+}
 
 export interface WorkoutService {
   startQuickWorkout(options?: StartWorkoutOptions): Promise<WorkoutSession>;
@@ -24,6 +31,7 @@ export interface WorkoutService {
   addSet(sessionId: string, exerciseId: string): Promise<WorkoutSession>;
   removeSet(sessionId: string, exerciseId: string, setIndex: number): Promise<WorkoutSession>;
   updateSet(sessionId: string, exerciseId: string, setIndex: number, data: SetUpdate): Promise<WorkoutSession>;
+  replaceWorkoutExercise(input: ReplaceWorkoutExerciseInput): Promise<WorkoutSession>;
   getWorkoutHistory(): Promise<WorkoutSession[]>;
   listCompletedWorkouts(options?: ListCompletedWorkoutsOptions): Promise<WorkoutSession[]>;
   getWorkoutHistoryDetail(sessionId: string): Promise<WorkoutSession | null>;
@@ -183,6 +191,43 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       await getRequiredWorkout(sessionId);
       await store.sessions.updateSet(exerciseId, setIndex, data);
       return reload(sessionId);
+    },
+    async replaceWorkoutExercise(input) {
+      const session = await getRequiredWorkout(input.sessionId);
+      if (session.status !== 'active' && session.status !== 'paused') throw new Error('WORKOUT_NOT_ACTIVE');
+      const exercise = session.exercises.find(item => item.id === input.sessionExerciseId);
+      if (!exercise) throw new Error('WORKOUT_EXERCISE_NOT_FOUND');
+      const completedSetCount = exercise.sets.filter(set => set.completed).length;
+      if (completedSetCount !== input.expectedCompletedSetCount) throw new Error('REPLACEMENT_OPTIONS_CHANGED');
+      if (exercise.sets.length > 0 && completedSetCount === exercise.sets.length) throw new Error('EXERCISE_ALREADY_COMPLETED');
+      const occurredAt = Date.now();
+      const replacementSessionExerciseId = completedSetCount === 0 ? exercise.id : generateId();
+      await store.sessions.replaceExerciseAtomically({
+        sessionId: session.id,
+        sessionExerciseId: exercise.id,
+        replacementExerciseId: input.replacementExerciseId,
+        reason: input.reason,
+        occurredAt,
+        expectedCompletedSetCount: input.expectedCompletedSetCount,
+        replacementSessionExerciseId,
+        event: {
+          id: generateId(),
+          eventType: 'WORKOUT_EXERCISE_REPLACED',
+          entityType: 'workout',
+          entityId: session.id,
+          createdAt: occurredAt,
+          payload: {
+            sessionId: session.id,
+            originalSessionExerciseId: exercise.id,
+            replacementSessionExerciseId,
+            originalExerciseId: exercise.exerciseId,
+            replacementExerciseId: input.replacementExerciseId,
+            reason: input.reason,
+            replacedAt: occurredAt,
+          },
+        },
+      });
+      return reload(session.id);
     },
     getWorkoutHistory: () => store.sessions.getAll(),
     async listCompletedWorkouts(options = {}) {

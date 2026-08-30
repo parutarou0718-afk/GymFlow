@@ -10,7 +10,7 @@ export interface Migration {
   up(): Promise<void>;
 }
 
-export const LATEST_SCHEMA_VERSION = 7;
+export const LATEST_SCHEMA_VERSION = 8;
 const COMPATIBILITY_BASELINE_VERSION = 6;
 
 export async function runMigrationLedger(adapter: MigrationLedgerAdapter, migrations: Migration[]): Promise<number[]> {
@@ -131,6 +131,15 @@ function sqliteMigrations(database: MigrationDatabase): Migration[] {
       up: async () => {
         await ensureColumn(database, 'sessions', 'gym_id', 'TEXT');
         await database.execAsync(`CREATE TABLE IF NOT EXISTS user_gym_contexts (user_id TEXT PRIMARY KEY, current_gym_id TEXT, selected_at INTEGER, updated_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY(current_gym_id) REFERENCES gyms(id) ON DELETE SET NULL);`);
+      },
+    },
+    {
+      version: 8,
+      name: 'workout-exercise-replacement-provenance',
+      up: async () => {
+        await ensureColumn(database, 'session_exercises', 'replaced_from_exercise_id', 'TEXT');
+        await ensureColumn(database, 'session_exercises', 'replacement_reason', 'TEXT');
+        await ensureColumn(database, 'session_exercises', 'replacement_occurred_at', 'INTEGER');
       },
     },
   ];

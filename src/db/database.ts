@@ -14,7 +14,7 @@ import type {
   SyncQueueItem,
   WorkoutDomainEvent,
 } from '../types';
-import type { GymFlowStore, WorkoutCompletionInput } from './types';
+import type { GymFlowStore, WorkoutCompletionInput, WorkoutExerciseReplacementInput } from './types';
 import type { Gym } from '../modules/gym';
 import type { Equipment } from '../modules/equipment';
 import type { GymEquipmentInventoryItem } from '../modules/gym-inventory';
@@ -414,9 +414,9 @@ export async function createSession(session: WorkoutSession): Promise<void> {
   // Insert exercises and sets
   for (const exercise of session.exercises) {
     await database.runAsync(
-      `INSERT INTO session_exercises (id, session_id, exercise_id, exercise_order, notes)
-       VALUES (?, ?, ?, ?, ?)`,
-      [exercise.id, session.id, exercise.exerciseId, exercise.order, exercise.notes || null]
+      `INSERT INTO session_exercises (id, session_id, exercise_id, exercise_order, notes, replaced_from_exercise_id, replacement_reason, replacement_occurred_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [exercise.id, session.id, exercise.exerciseId, exercise.order, exercise.notes || null, exercise.replacedFromExerciseId ?? null, exercise.replacementReason ?? null, exercise.replacementOccurredAt ?? null]
     );
 
     for (const set of exercise.sets) {
@@ -518,6 +518,9 @@ export async function getSession(id: UUID): Promise<WorkoutSession | null> {
       exerciseId: er.exercise_id,
       order: er.exercise_order,
       notes: er.notes || undefined,
+      replacedFromExerciseId: er.replaced_from_exercise_id ?? null,
+      replacementReason: er.replacement_reason ?? null,
+      replacementOccurredAt: er.replacement_occurred_at ?? null,
       sets: setRows.map(s => ({
         setIndex: s.set_index,
         weight: s.weight,
@@ -619,6 +622,66 @@ export async function completeWorkoutAtomically(input: WorkoutCompletionInput): 
   });
 }
 
+export async function replaceWorkoutExerciseAtomically(input: WorkoutExerciseReplacementInput): Promise<void> {
+  const database = await getDatabase();
+  const payload = JSON.stringify(input.event.payload);
+
+  await database.withExclusiveTransactionAsync(async transaction => {
+    const session = await transaction.getFirstAsync<{ status: string }>('SELECT status FROM sessions WHERE id = ?', [input.sessionId]);
+    if (!session) throw new Error('WORKOUT_EXERCISE_NOT_FOUND');
+    if (session.status !== 'active' && session.status !== 'paused') throw new Error('WORKOUT_NOT_ACTIVE');
+
+    const original = await transaction.getFirstAsync<{ exercise_id: string; exercise_order: number }>(
+      'SELECT exercise_id, exercise_order FROM session_exercises WHERE id = ? AND session_id = ?',
+      [input.sessionExerciseId, input.sessionId],
+    );
+    if (!original) throw new Error('WORKOUT_EXERCISE_NOT_FOUND');
+    if (original.exercise_id === input.replacementExerciseId) throw new Error('INVALID_REPLACEMENT');
+
+    const sets = await transaction.getAllAsync<{ set_index: number; weight: number; reps: number; completed: number }>(
+      'SELECT set_index, weight, reps, completed FROM completed_sets WHERE session_exercise_id = ? ORDER BY set_index',
+      [input.sessionExerciseId],
+    );
+    const completed = sets.filter(set => set.completed === 1);
+    if (completed.length !== input.expectedCompletedSetCount) throw new Error('REPLACEMENT_OPTIONS_CHANGED');
+    if (sets.length > 0 && completed.length === sets.length) throw new Error('EXERCISE_ALREADY_COMPLETED');
+
+    if (completed.length === 0) {
+      await transaction.runAsync(
+        `UPDATE session_exercises
+         SET exercise_id = ?, replaced_from_exercise_id = ?, replacement_reason = ?, replacement_occurred_at = ?
+         WHERE id = ? AND session_id = ?`,
+        [input.replacementExerciseId, original.exercise_id, input.reason, input.occurredAt, input.sessionExerciseId, input.sessionId],
+      );
+      await transaction.runAsync('UPDATE completed_sets SET weight = 0, completed = 0 WHERE session_exercise_id = ?', [input.sessionExerciseId]);
+    } else {
+      await transaction.runAsync('DELETE FROM completed_sets WHERE session_exercise_id = ? AND completed = 0', [input.sessionExerciseId]);
+      await transaction.runAsync(
+        'UPDATE session_exercises SET exercise_order = exercise_order + 1 WHERE session_id = ? AND exercise_order > ?',
+        [input.sessionId, original.exercise_order],
+      );
+      await transaction.runAsync(
+        `INSERT INTO session_exercises (id, session_id, exercise_id, exercise_order, replaced_from_exercise_id, replacement_reason, replacement_occurred_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [input.replacementSessionExerciseId, input.sessionId, input.replacementExerciseId, original.exercise_order + 1, original.exercise_id, input.reason, input.occurredAt],
+      );
+      let replacementSetIndex = 0;
+      for (const set of sets.filter(item => item.completed === 0)) {
+        await transaction.runAsync(
+          'INSERT INTO completed_sets (session_exercise_id, set_index, weight, reps, completed) VALUES (?, ?, ?, ?, 0)',
+          [input.replacementSessionExerciseId, replacementSetIndex++, 0, set.reps],
+        );
+      }
+    }
+
+    await transaction.runAsync('UPDATE sessions SET updated_at = ? WHERE id = ?', [input.occurredAt, input.sessionId]);
+    await transaction.runAsync(
+      'INSERT INTO domain_events (id, event_type, entity_type, entity_id, created_at, payload) VALUES (?, ?, ?, ?, ?, ?)',
+      [input.event.id, input.event.eventType, input.event.entityType, input.event.entityId, input.event.createdAt, payload],
+    );
+  });
+}
+
 export async function getPendingSyncItems(): Promise<SyncQueueItem[]> {
   const database = await getDatabase();
   const rows = await database.getAllAsync<any>(
@@ -677,7 +740,7 @@ export async function getTotalVolume(): Promise<number> {
 
 export async function addSessionExercise(sessionId: UUID, exercise: SessionExercise): Promise<void> {
   const database = await getDatabase();
-  await database.runAsync('INSERT INTO session_exercises (id, session_id, exercise_id, exercise_order, notes) VALUES (?, ?, ?, ?, ?)', [exercise.id, sessionId, exercise.exerciseId, exercise.order, exercise.notes || null]);
+  await database.runAsync('INSERT INTO session_exercises (id, session_id, exercise_id, exercise_order, notes, replaced_from_exercise_id, replacement_reason, replacement_occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [exercise.id, sessionId, exercise.exerciseId, exercise.order, exercise.notes || null, exercise.replacedFromExerciseId ?? null, exercise.replacementReason ?? null, exercise.replacementOccurredAt ?? null]);
 }
 
 export async function removeSessionExercise(sessionId: UUID, exerciseId: UUID): Promise<void> {
@@ -799,6 +862,7 @@ export function createStore(): GymFlowStore {
       removeExercise: removeSessionExercise,
       addSet: addSessionSet,
       removeSet: removeSessionSet,
+      replaceExerciseAtomically: replaceWorkoutExerciseAtomically,
       getActive: getActiveSession,
       getAll: getAllSessions,
       getTotalWorkouts,

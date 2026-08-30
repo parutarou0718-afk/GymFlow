@@ -16,7 +16,7 @@ function createAdapter(version: number | null, currentCompatibilityBaseline: boo
   return { adapter, applied, written };
 }
 
-const migrations = [1, 2, 3, 4, 5, 6, 7].map(version => ({
+const migrations = [1, 2, 3, 4, 5, 6, 7, 8].map(version => ({
   version,
   name: `migration-${version}`,
   up: async () => undefined,
@@ -26,12 +26,12 @@ test('migration ledger applies fresh installations in ordered versions exactly o
   const state = createAdapter(null, false);
   const applied = await runMigrationLedger(state.adapter, migrations);
 
-  assert.deepEqual(applied, [1, 2, 3, 4, 5, 6, 7]);
-  assert.deepEqual(state.written, [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(applied, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(state.written, [1, 2, 3, 4, 5, 6, 7, 8]);
 
   const secondRun = await runMigrationLedger(state.adapter, migrations);
   assert.deepEqual(secondRun, []);
-  assert.deepEqual(state.written, [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(state.written, [1, 2, 3, 4, 5, 6, 7, 8]);
 });
 
 test('migration ledger claims an already-current M11 schema baseline then applies M14 additions', async () => {
@@ -39,8 +39,8 @@ test('migration ledger claims an already-current M11 schema baseline then applie
 
   const applied = await runMigrationLedger(state.adapter, migrations);
 
-  assert.deepEqual(applied, [7]);
-  assert.deepEqual(state.written, [6, 7]);
+  assert.deepEqual(applied, [7, 8]);
+  assert.deepEqual(state.written, [6, 7, 8]);
 });
 
 test('migration ledger advances an older version-one database only through missing migrations', async () => {
@@ -48,6 +48,6 @@ test('migration ledger advances an older version-one database only through missi
 
   const applied = await runMigrationLedger(state.adapter, migrations);
 
-  assert.deepEqual(applied, [2, 3, 4, 5, 6, 7]);
-  assert.deepEqual(state.written, [2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(applied, [2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(state.written, [2, 3, 4, 5, 6, 7, 8]);
 });

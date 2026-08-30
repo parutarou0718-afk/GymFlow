@@ -79,7 +79,16 @@ export interface SessionExercise {
   order: number;
   sets: CompletedSet[];
   notes?: string;
+  replacedFromExerciseId?: string | null;
+  replacementReason?: WorkoutReplacementReason | null;
+  replacementOccurredAt?: number | null;
 }
+
+export type WorkoutReplacementReason =
+  | 'equipment_occupied'
+  | 'equipment_unavailable'
+  | 'prefer_different_exercise'
+  | 'other';
 
 export interface CompletedSet {
   setIndex: number;
@@ -132,7 +141,8 @@ export type WorkoutDomainEventType =
   | 'WORKOUT_PAUSED'
   | 'WORKOUT_RESUMED'
   | 'WORKOUT_COMPLETED'
-  | 'WORKOUT_DISCARDED';
+  | 'WORKOUT_DISCARDED'
+  | 'WORKOUT_EXERCISE_REPLACED';
 
 export interface WorkoutDomainEvent {
   id: UUID;

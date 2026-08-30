@@ -13,6 +13,7 @@ import type {
   CompletedSet,
   SessionExercise,
   WorkoutDomainEvent,
+  WorkoutReplacementReason,
 } from '../types';
 import type { Gym } from '../modules/gym';
 import type { Equipment } from '../modules/equipment';
@@ -45,6 +46,7 @@ export interface SessionStore {
   removeExercise(sessionId: UUID, exerciseId: UUID): Promise<void>;
   addSet(exerciseId: UUID, set: CompletedSet): Promise<void>;
   removeSet(exerciseId: UUID, setIndex: number): Promise<void>;
+  replaceExerciseAtomically(input: WorkoutExerciseReplacementInput): Promise<void>;
   getActive(): Promise<WorkoutSession | null>;
   getAll(): Promise<WorkoutSession[]>;
   getTotalWorkouts(): Promise<number>;
@@ -72,6 +74,17 @@ export interface SyncStore {
 export interface DomainEventStore {
   record(event: WorkoutDomainEvent): Promise<void>;
   getForSession(sessionId: UUID): Promise<WorkoutDomainEvent[]>;
+}
+
+export interface WorkoutExerciseReplacementInput {
+  sessionId: UUID;
+  sessionExerciseId: UUID;
+  replacementExerciseId: string;
+  reason: WorkoutReplacementReason;
+  occurredAt: number;
+  expectedCompletedSetCount: number;
+  replacementSessionExerciseId: UUID;
+  event: WorkoutDomainEvent;
 }
 
 export interface WorkoutCompletionInput {

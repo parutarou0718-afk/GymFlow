@@ -217,6 +217,48 @@ export function createWebStore(): GymFlowStore {
           if (exercise) { exercise.sets = exercise.sets.filter(set => set.setIndex !== setIndex); return; }
         }
       },
+      async replaceExerciseAtomically(input) {
+        const nextSessions = clone(sessions);
+        const session = nextSessions.find(item => item.id === input.sessionId);
+        if (!session) throw new Error('WORKOUT_EXERCISE_NOT_FOUND');
+        if (session.status !== 'active' && session.status !== 'paused') throw new Error('WORKOUT_NOT_ACTIVE');
+        const index = session.exercises.findIndex(item => item.id === input.sessionExerciseId);
+        if (index < 0) throw new Error('WORKOUT_EXERCISE_NOT_FOUND');
+        const original = session.exercises[index];
+        const completedSetCount = original.sets.filter(set => set.completed).length;
+        if (completedSetCount !== input.expectedCompletedSetCount) throw new Error('REPLACEMENT_OPTIONS_CHANGED');
+        if (original.sets.length > 0 && completedSetCount === original.sets.length) throw new Error('EXERCISE_ALREADY_COMPLETED');
+        if (original.exerciseId === input.replacementExerciseId) throw new Error('INVALID_REPLACEMENT');
+
+        if (completedSetCount === 0) {
+          session.exercises[index] = {
+            ...original,
+            exerciseId: input.replacementExerciseId,
+            exercise: undefined,
+            sets: original.sets.map(set => ({ ...set, weight: 0, completed: false })),
+            replacedFromExerciseId: original.exerciseId,
+            replacementReason: input.reason,
+            replacementOccurredAt: input.occurredAt,
+          };
+        } else {
+          const pendingSets = original.sets.filter(set => !set.completed);
+          const originalOrder = original.order;
+          session.exercises[index] = { ...original, sets: original.sets.filter(set => set.completed) };
+          session.exercises = session.exercises.map((exercise, exerciseIndex) => exerciseIndex === index || exercise.order <= originalOrder ? exercise : { ...exercise, order: exercise.order + 1 });
+          session.exercises.splice(index + 1, 0, {
+            id: input.replacementSessionExerciseId,
+            exerciseId: input.replacementExerciseId,
+            order: originalOrder + 1,
+            sets: pendingSets.map((set, setIndex) => ({ ...set, setIndex, weight: 0, completed: false })),
+            replacedFromExerciseId: original.exerciseId,
+            replacementReason: input.reason,
+            replacementOccurredAt: input.occurredAt,
+          });
+        }
+
+        sessions = nextSessions;
+        events = [...events.map(clone), clone(input.event)];
+      },
       async getActive() {
         const session = sessions.find(item => item.status === 'active' || item.status === 'paused');
         return session ? clone(session) : null;

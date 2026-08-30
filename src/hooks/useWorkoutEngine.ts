@@ -30,6 +30,7 @@ export interface UseWorkoutEngineReturn {
   handleResume: () => Promise<void>;
   handleFinish: () => Promise<void>;
   handleDiscard: () => Promise<void>;
+  refresh: () => Promise<void>;
   formatTime: (seconds: number) => string;
 }
 
@@ -148,6 +149,11 @@ export function useWorkoutEngine({ templateId, existingSessionId, onFinish }: Us
     }
   }, [session, saving, workoutService, onFinish]);
 
+  const refresh = useCallback(async () => {
+    if (!session) return;
+    setSession(await workoutService.getWorkout(session.id));
+  }, [session, workoutService]);
+
   const formatTime = useCallback((seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainder = seconds % 60;
@@ -158,5 +164,6 @@ export function useWorkoutEngine({ templateId, existingSessionId, onFinish }: Us
     session, elapsed, isPaused, saving,
     handleSetUpdate, toggleSetComplete, addExercise, removeExercise, addSet, removeSet,
     handlePause, handleResume, handleFinish, handleDiscard, formatTime,
+    refresh,
   };
 }

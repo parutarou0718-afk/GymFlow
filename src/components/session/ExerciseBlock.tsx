@@ -16,9 +16,10 @@ interface ExerciseBlockProps {
   onAddSet: (exId: string) => void;
   onRemoveSet: (exId: string, setIdx: number) => void;
   onRemoveExercise: (exId: string) => void;
+  onReplaceExercise: (exId: string) => void;
 }
 
-export function ExerciseBlock({ exercise, onUpdateSet, onToggleComplete, onAddSet, onRemoveSet, onRemoveExercise }: ExerciseBlockProps) {
+export function ExerciseBlock({ exercise, onUpdateSet, onToggleComplete, onAddSet, onRemoveSet, onRemoveExercise, onReplaceExercise }: ExerciseBlockProps) {
   const completedCount = exercise.sets.filter(s => s.completed).length;
 
   return (
@@ -85,6 +86,7 @@ export function ExerciseBlock({ exercise, onUpdateSet, onToggleComplete, onAddSe
       <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm }}>
         <TouchableOpacity onPress={() => onAddSet(exercise.id)}><Text style={{ color: colors.primary, fontWeight: '700' }}>+ Add Set</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => onRemoveExercise(exercise.id)}><Text style={{ color: colors.danger, fontWeight: '700' }}>Remove Exercise</Text></TouchableOpacity>
+        {completedCount < exercise.sets.length || exercise.sets.length === 0 ? <TouchableOpacity onPress={() => onReplaceExercise(exercise.id)}><Text style={{ color: colors.primary, fontWeight: '700' }}>Replace Exercise</Text></TouchableOpacity> : null}
       </View>
     </Card>
   );

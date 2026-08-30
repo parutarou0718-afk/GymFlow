@@ -6,4 +6,5 @@ export type {
   WorkoutSession,
   WorkoutSourceType,
   WorkoutTemplate,
+  WorkoutReplacementReason,
 } from '../../types';
