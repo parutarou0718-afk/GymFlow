@@ -6,6 +6,10 @@ import { createWebStore } from '../src/db/web-store';
 import { createGymService } from '../src/modules/gym';
 import { createGymContextService } from '../src/modules/gym-context';
 import { createInventoryService } from '../src/modules/gym-inventory';
+import { createEquipmentService } from '../src/modules/equipment';
+import { createExerciseService } from '../src/modules/exercise';
+import { createExerciseEquipmentService } from '../src/modules/exercise-equipment';
+import { createExerciseSubstitutionService } from '../src/modules/exercise-substitution';
 import { createMatchingService } from '../src/modules/matching';
 import { createProgramAdaptationService } from '../src/modules/program-adaptation';
 import { createProgramMatchingService } from '../src/modules/program-matching';
@@ -30,6 +34,127 @@ async function setup() {
   const program = await programs.createProgram({ name: 'Empty executable Program', description: '', exercises: [] });
   return { contexts, flow, gymA, gymB, program, workouts };
 }
+
+async function setupRealProgramMatch() {
+  const store = createWebStore();
+  const gyms = createGymService(store);
+  const contexts = createGymContextService(store);
+  const programs = createProgramService(store);
+  const matching = createMatchingService(store);
+  const workouts = createWorkoutService(store);
+  const inventory = createInventoryService(store);
+  const equipment = createEquipmentService(store);
+  const exercises = createExerciseService(store);
+  const execution = createExerciseEquipmentService(store);
+  const substitutions = createExerciseSubstitutionService(store);
+  const flow = createTrainingFlowService({
+    users: createUserService(store), gymContexts: contexts, gyms, inventory, programs,
+    programMatching: createProgramMatchingService({ programs, matching }),
+    programAdaptation: createProgramAdaptationService({ programs, gyms }), workouts,
+  });
+  const [gymA, gymB] = await Promise.all([
+    gyms.createGym({ name: 'Gym A' }),
+    gyms.createGym({ name: 'Gym B' }),
+  ]);
+  const createProgramForExercise = async (name: string, exerciseId: string) => programs.createProgram({
+    name,
+    description: '',
+    exercises: [{ id: `${name}-entry`, exerciseId, order: 0, targetSets: [] }],
+  });
+
+  return { contexts, flow, gymA, gymB, workouts, inventory, equipment, exercises, execution, substitutions, createProgramForExercise };
+}
+
+test('Training Flow starts a fully executable Program at the matched Current Gym', async () => {
+  const { contexts, flow, gymA, workouts, exercises, createProgramForExercise } = await setupRealProgramMatch();
+  const exercise = await exercises.createExercise({ name: 'Fully executable movement', aliases: [], category: 'compound', movementPattern: 'horizontal_push', primaryMuscles: ['chest'], secondaryMuscles: [] });
+  const program = await createProgramForExercise('Fully executable Program', exercise.id);
+  await contexts.setCurrentGym(DEFAULT_LOCAL_USER_ID, gymA.id);
+
+  assert.equal((await flow.matchProgramForCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id })).status, 'fully_executable');
+  const session = await flow.startProgramWorkoutAtCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id });
+
+  assert.equal(session.gymId, gymA.id);
+  assert.equal((await workouts.getWorkout(session.id))?.gymId, gymA.id);
+});
+
+test('Training Flow starts a warning Program at the matched Current Gym without adaptation', async () => {
+  const { contexts, flow, gymA, workouts, inventory, equipment, exercises, execution, createProgramForExercise } = await setupRealProgramMatch();
+  const exercise = await exercises.createExercise({ name: 'Warning movement', aliases: [], category: 'compound', movementPattern: 'horizontal_push', primaryMuscles: ['chest'], secondaryMuscles: [] });
+  const [required, preferred] = await Promise.all([
+    equipment.createEquipment({ name: 'Required test equipment', category: 'machine' }),
+    equipment.createEquipment({ name: 'Preferred test equipment', category: 'accessory' }),
+  ]);
+  const group = await execution.createRequirementGroup(exercise.id, { name: 'Warning requirements' });
+  await execution.addEquipmentRequirement(group.id, { equipmentId: required.id, level: 'required' });
+  await execution.addEquipmentRequirement(group.id, { equipmentId: preferred.id, level: 'preferred' });
+  await inventory.addEquipmentToGym(gymA.id, required.id, { quantity: 1, status: 'available' });
+  const program = await createProgramForExercise('Warning Program', exercise.id);
+  await contexts.setCurrentGym(DEFAULT_LOCAL_USER_ID, gymA.id);
+
+  assert.equal((await flow.matchProgramForCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id })).status, 'executable_with_warnings');
+  const session = await flow.startProgramWorkoutAtCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id });
+
+  assert.equal(session.gymId, gymA.id);
+  assert.equal((await workouts.getWorkout(session.id))?.gymId, gymA.id);
+});
+
+test('Training Flow rejects an adaptable Program without creating a Workout', async () => {
+  const { contexts, flow, gymA, workouts, inventory, equipment, exercises, execution, substitutions, createProgramForExercise } = await setupRealProgramMatch();
+  const [source, replacement] = await Promise.all([
+    exercises.createExercise({ name: 'Adaptable source movement', aliases: [], category: 'compound', movementPattern: 'horizontal_push', primaryMuscles: ['chest'], secondaryMuscles: [] }),
+    exercises.createExercise({ name: 'Available replacement movement', aliases: [], category: 'compound', movementPattern: 'horizontal_push', primaryMuscles: ['chest'], secondaryMuscles: [] }),
+  ]);
+  const [missingEquipment, replacementEquipment] = await Promise.all([
+    equipment.createEquipment({ name: 'Missing source equipment', category: 'machine' }),
+    equipment.createEquipment({ name: 'Replacement equipment', category: 'machine' }),
+  ]);
+  const [sourceGroup, replacementGroup] = await Promise.all([
+    execution.createRequirementGroup(source.id, { name: 'Source requirements' }),
+    execution.createRequirementGroup(replacement.id, { name: 'Replacement requirements' }),
+  ]);
+  await execution.addEquipmentRequirement(sourceGroup.id, { equipmentId: missingEquipment.id, level: 'required' });
+  await execution.addEquipmentRequirement(replacementGroup.id, { equipmentId: replacementEquipment.id, level: 'required' });
+  await inventory.addEquipmentToGym(gymA.id, replacementEquipment.id, { quantity: 1, status: 'available' });
+  await substitutions.createSubstitution({ sourceExerciseId: source.id, targetExerciseId: replacement.id, quality: 'good' });
+  const program = await createProgramForExercise('Adaptable Program', source.id);
+  await contexts.setCurrentGym(DEFAULT_LOCAL_USER_ID, gymA.id);
+  const before = (await workouts.getWorkoutHistory()).length;
+
+  assert.equal((await flow.matchProgramForCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id })).status, 'requires_adaptation');
+  await assert.rejects(() => flow.startProgramWorkoutAtCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id }), /PROGRAM_REQUIRES_ADAPTATION/);
+
+  assert.equal((await workouts.getWorkoutHistory()).length, before);
+});
+
+test('Training Flow rejects a blocked Program without creating a Workout', async () => {
+  const { contexts, flow, gymA, workouts, equipment, exercises, execution, createProgramForExercise } = await setupRealProgramMatch();
+  const exercise = await exercises.createExercise({ name: 'Blocked movement', aliases: [], category: 'cardio', movementPattern: 'cardio', primaryMuscles: [], secondaryMuscles: [] });
+  const required = await equipment.createEquipment({ name: 'Blocked test equipment', category: 'machine' });
+  const group = await execution.createRequirementGroup(exercise.id, { name: 'Blocked requirements' });
+  await execution.addEquipmentRequirement(group.id, { equipmentId: required.id, level: 'required' });
+  const program = await createProgramForExercise('Blocked Program', exercise.id);
+  await contexts.setCurrentGym(DEFAULT_LOCAL_USER_ID, gymA.id);
+  const before = (await workouts.getWorkoutHistory()).length;
+
+  assert.equal((await flow.matchProgramForCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id })).status, 'not_executable');
+  await assert.rejects(() => flow.startProgramWorkoutAtCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id }), /PROGRAM_NOT_EXECUTABLE/);
+
+  assert.equal((await workouts.getWorkoutHistory()).length, before);
+});
+
+test('Training Flow rejects a stale Current Gym before creating a Program Workout', async () => {
+  const { contexts, flow, gymA, gymB, workouts, exercises, createProgramForExercise } = await setupRealProgramMatch();
+  const exercise = await exercises.createExercise({ name: 'Stale-context movement', aliases: [], category: 'compound', movementPattern: 'horizontal_push', primaryMuscles: ['chest'], secondaryMuscles: [] });
+  const program = await createProgramForExercise('Stale-context Program', exercise.id);
+  await contexts.setCurrentGym(DEFAULT_LOCAL_USER_ID, gymA.id);
+  const before = (await workouts.getWorkoutHistory()).length;
+  await contexts.setCurrentGym(DEFAULT_LOCAL_USER_ID, gymB.id);
+
+  await assert.rejects(() => flow.startProgramWorkoutAtCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId: program.id, expectedGymId: gymA.id }), /CURRENT_GYM_CHANGED/);
+
+  assert.equal((await workouts.getWorkoutHistory()).length, before);
+});
 
 test('Training Flow passes the current Gym explicitly to Workout and rejects stale context', async () => {
   const { contexts, flow, gymA, gymB, program, workouts } = await setup();
