@@ -37,6 +37,8 @@ export default function HomeScreen() {
   const [stats, setStats] = useState({ workouts: 0, volume: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const [currentGym, setCurrentGym] = useState<Gym | null>(null);
+  const [currentGymUnavailable, setCurrentGymUnavailable] = useState(false);
+  const [activeGymName, setActiveGymName] = useState<string | null>(null);
   const [homeGym, setHomeGym] = useState<UserGymRelationship | null>(null);
   const [recentGyms, setRecentGyms] = useState<UserGymRelationship[]>([]);
 
@@ -49,10 +51,17 @@ export default function HomeScreen() {
       userGymApi.getHomeGym(DEFAULT_LOCAL_USER_ID),
       userGymApi.getRecentGyms(DEFAULT_LOCAL_USER_ID, { limit: 2 }),
     ]);
-    setActiveSession(active[0] ?? null);
+    const activeSession = active[0] ?? null;
+    setActiveSession(activeSession);
     setRecentTemplates(templs.slice(0, 5));
     setStats(workoutStats);
-    setCurrentGym(currentGymId ? await gymApi.getGym(currentGymId) : null);
+    const [resolvedCurrentGym, resolvedActiveGym] = await Promise.all([
+      currentGymId ? gymApi.getGym(currentGymId) : null,
+      activeSession?.gymId ? gymApi.getGym(activeSession.gymId) : null,
+    ]);
+    setCurrentGym(resolvedCurrentGym);
+    setCurrentGymUnavailable(Boolean(currentGymId && !resolvedCurrentGym));
+    setActiveGymName(resolvedActiveGym?.name ?? null);
     setHomeGym(home); setRecentGyms(recent);
   }, [contextApi, gymApi, programApi, userGymApi, workoutApi]);
 
@@ -101,8 +110,24 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <SectionHeader title="Current Gym" />
-      {currentGym ? <Card onPress={() => router.push({ pathname: '/gym-detail' as any, params: { gymId: currentGym.id } })}><Text style={typography.body}>{currentGym.name}</Text><Text style={typography.caption}>{currentGym.address || 'Not available'}</Text><Button title="View Gym" onPress={() => router.push({ pathname: '/gym-detail' as any, params: { gymId: currentGym.id } })} /></Card> : <Card><Text style={typography.body}>No Current Gym</Text><Button title="Choose Gym" onPress={() => router.push('/(tabs)/current-gym')} />{homeGym ? <Button title="Use Home Gym" variant="secondary" onPress={() => void setCurrent(homeGym.gymId)} /> : null}{recentGyms.map(item => <Button key={item.gymId} title="Use Recent Gym" variant="secondary" onPress={() => void setCurrent(item.gymId)} />)}</Card>}
+      <SectionHeader title="Training location" />
+      {currentGym ? (
+        <Card onPress={() => router.push({ pathname: '/gym-detail' as any, params: { gymId: currentGym.id } })}>
+          <Text style={typography.caption}>Today at</Text>
+          <Text style={[typography.h2, { marginTop: spacing.xs }]}>{currentGym.name}</Text>
+          <Text style={typography.caption}>{currentGym.address || 'Training location selected'}</Text>
+          <Button title="Choose a Program" onPress={() => router.push('/(tabs)/plans')} style={{ marginTop: spacing.md }} />
+          <Button title="Change training location" variant="secondary" onPress={() => router.push('/(tabs)/current-gym')} style={{ marginTop: spacing.sm }} />
+        </Card>
+      ) : (
+        <Card>
+          <Text style={typography.h2}>{currentGymUnavailable ? 'Training location unavailable' : 'Choose where you’re training'}</Text>
+          <Text style={[typography.caption, { marginTop: spacing.xs }]}>{currentGymUnavailable ? 'Your previous training location is no longer available. Choose another location.' : 'Set a training location to check Programs against the equipment there.'}</Text>
+          <Button title="Choose where you’re training" onPress={() => router.push('/(tabs)/current-gym')} style={{ marginTop: spacing.md }} />
+          {homeGym ? <Button title="Use Home Gym" variant="secondary" onPress={() => void setCurrent(homeGym.gymId)} style={{ marginTop: spacing.sm }} /> : null}
+          {recentGyms.map(item => <Button key={item.gymId} title="Use Recent Gym" variant="secondary" onPress={() => void setCurrent(item.gymId)} style={{ marginTop: spacing.sm }} />)}
+        </Card>
+      )}
 
       {/* Active Session Banner */}
       {activeSession && (
@@ -115,7 +140,7 @@ export default function HomeScreen() {
               <Text style={[typography.bodySmall, { marginTop: 2 }]}>
                 {activeSession.templateName || 'Quick Workout'}
               </Text>
-              <Text style={typography.caption}>{activeSession.gymId ? `Gym: ${activeSession.gymId}` : 'No Gym'}</Text>
+              <Text style={typography.caption}>{activeSession.gymId ? activeGymName ?? 'Training location unavailable' : 'No Gym'}</Text>
             </View>
             <TouchableOpacity
               style={styles.resumeButton}
@@ -127,13 +152,12 @@ export default function HomeScreen() {
         </Card>
       )}
 
-      {/* Quick Start */}
+      {/* Quick Workout remains available without a training location. */}
       <View style={styles.quickStart}>
         <Button
           title="Start Quick Workout"
           onPress={() => handleStartWorkout()}
-          variant="primary"
-          size="lg"
+          variant="secondary"
           style={{ width: '100%' }}
         />
       </View>
