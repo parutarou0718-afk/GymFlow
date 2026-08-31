@@ -3,16 +3,17 @@
 // UI coordination over the Workout module public API
 // ========================================
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { AppState } from 'react-native';
-import { useStores } from '../db/stores';
-import { createWorkoutService } from '../modules/workout';
-import type { Exercise, WorkoutSession } from '../modules/workout';
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { AppState } from "react-native";
+import { useStores } from "../db/stores";
+import { createWorkoutService } from "../modules/workout";
+import type { Exercise, WorkoutSession } from "../modules/workout";
 
 export interface UseWorkoutEngineOptions {
   templateId?: string;
   existingSessionId?: string;
-  onFinish: () => void;
+  onFinish: (session: WorkoutSession) => void;
+  onDiscard: () => void;
 }
 
 export interface UseWorkoutEngineReturn {
@@ -20,7 +21,12 @@ export interface UseWorkoutEngineReturn {
   elapsed: number;
   isPaused: boolean;
   saving: boolean;
-  handleSetUpdate: (exerciseId: string, setIndex: number, field: 'weight' | 'reps', value: number) => Promise<void>;
+  handleSetUpdate: (
+    exerciseId: string,
+    setIndex: number,
+    field: "weight" | "reps",
+    value: number,
+  ) => Promise<void>;
   toggleSetComplete: (exerciseId: string, setIndex: number) => Promise<void>;
   addExercise: (exercise: Exercise) => Promise<void>;
   removeExercise: (exerciseId: string) => Promise<void>;
@@ -34,7 +40,12 @@ export interface UseWorkoutEngineReturn {
   formatTime: (seconds: number) => string;
 }
 
-export function useWorkoutEngine({ templateId, existingSessionId, onFinish }: UseWorkoutEngineOptions): UseWorkoutEngineReturn {
+export function useWorkoutEngine({
+  templateId,
+  existingSessionId,
+  onFinish,
+  onDiscard,
+}: UseWorkoutEngineOptions): UseWorkoutEngineReturn {
   const store = useStores();
   const workoutService = useMemo(() => createWorkoutService(store), [store]);
   const [session, setSession] = useState<WorkoutSession | null>(null);
@@ -54,7 +65,7 @@ export function useWorkoutEngine({ templateId, existingSessionId, onFinish }: Us
       if (!loaded) return;
       setSession(loaded);
       setElapsed(Math.floor((Date.now() - loaded.startedAt) / 1000));
-      setIsPaused(loaded.status === 'paused');
+      setIsPaused(loaded.status === "paused");
     };
     void init();
   }, [existingSessionId, templateId, workoutService]);
@@ -67,7 +78,10 @@ export function useWorkoutEngine({ templateId, existingSessionId, onFinish }: Us
       }
       return;
     }
-    timerRef.current = setInterval(() => setElapsed(previous => previous + 1), 1000);
+    timerRef.current = setInterval(
+      () => setElapsed((previous) => previous + 1),
+      1000,
+    );
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -86,53 +100,96 @@ export function useWorkoutEngine({ templateId, existingSessionId, onFinish }: Us
   }, [session, saving, workoutService]);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', async nextState => {
-      if (appStateRef.current === 'active' && nextState.match(/inactive|background/) && session && !isPaused) {
-        await handlePause();
-      }
-      appStateRef.current = nextState;
-    });
+    const subscription = AppState.addEventListener(
+      "change",
+      async (nextState) => {
+        if (
+          appStateRef.current === "active" &&
+          nextState.match(/inactive|background/) &&
+          session &&
+          !isPaused
+        ) {
+          await handlePause();
+        }
+        appStateRef.current = nextState;
+      },
+    );
     return () => subscription.remove();
   }, [session, isPaused, handlePause]);
 
-  const handleSetUpdate = useCallback(async (exerciseId: string, setIndex: number, field: 'weight' | 'reps', value: number) => {
-    if (!session || saving) return;
-    setSession(await workoutService.updateSet(session.id, exerciseId, setIndex, { [field]: value }));
-  }, [session, saving, workoutService]);
+  const handleSetUpdate = useCallback(
+    async (
+      exerciseId: string,
+      setIndex: number,
+      field: "weight" | "reps",
+      value: number,
+    ) => {
+      if (!session || saving) return;
+      setSession(
+        await workoutService.updateSet(session.id, exerciseId, setIndex, {
+          [field]: value,
+        }),
+      );
+    },
+    [session, saving, workoutService],
+  );
 
-  const toggleSetComplete = useCallback(async (exerciseId: string, setIndex: number) => {
-    if (!session || saving) return;
-    const completed = !session.exercises.find(exercise => exercise.id === exerciseId)?.sets[setIndex]?.completed;
-    if (completed === undefined) return;
-    setSession(await workoutService.updateSet(session.id, exerciseId, setIndex, { completed }));
-  }, [session, saving, workoutService]);
+  const toggleSetComplete = useCallback(
+    async (exerciseId: string, setIndex: number) => {
+      if (!session || saving) return;
+      const completed = !session.exercises.find(
+        (exercise) => exercise.id === exerciseId,
+      )?.sets[setIndex]?.completed;
+      if (completed === undefined) return;
+      setSession(
+        await workoutService.updateSet(session.id, exerciseId, setIndex, {
+          completed,
+        }),
+      );
+    },
+    [session, saving, workoutService],
+  );
 
-  const addExercise = useCallback(async (exercise: Exercise) => {
-    if (!session || saving) return;
-    setSession(await workoutService.addExercise(session.id, exercise));
-  }, [session, saving, workoutService]);
+  const addExercise = useCallback(
+    async (exercise: Exercise) => {
+      if (!session || saving) return;
+      setSession(await workoutService.addExercise(session.id, exercise));
+    },
+    [session, saving, workoutService],
+  );
 
-  const removeExercise = useCallback(async (exerciseId: string) => {
-    if (!session || saving) return;
-    setSession(await workoutService.removeExercise(session.id, exerciseId));
-  }, [session, saving, workoutService]);
+  const removeExercise = useCallback(
+    async (exerciseId: string) => {
+      if (!session || saving) return;
+      setSession(await workoutService.removeExercise(session.id, exerciseId));
+    },
+    [session, saving, workoutService],
+  );
 
-  const addSet = useCallback(async (exerciseId: string) => {
-    if (!session || saving) return;
-    setSession(await workoutService.addSet(session.id, exerciseId));
-  }, [session, saving, workoutService]);
+  const addSet = useCallback(
+    async (exerciseId: string) => {
+      if (!session || saving) return;
+      setSession(await workoutService.addSet(session.id, exerciseId));
+    },
+    [session, saving, workoutService],
+  );
 
-  const removeSet = useCallback(async (exerciseId: string, setIndex: number) => {
-    if (!session || saving) return;
-    setSession(await workoutService.removeSet(session.id, exerciseId, setIndex));
-  }, [session, saving, workoutService]);
+  const removeSet = useCallback(
+    async (exerciseId: string, setIndex: number) => {
+      if (!session || saving) return;
+      setSession(
+        await workoutService.removeSet(session.id, exerciseId, setIndex),
+      );
+    },
+    [session, saving, workoutService],
+  );
 
   const handleFinish = useCallback(async () => {
     if (!session || saving) return;
     setSaving(true);
     try {
-      await workoutService.finishWorkout(session.id);
-      onFinish();
+      const completed = await workoutService.finishWorkout(session.id);
+      onFinish(completed);
     } finally {
       setSaving(false);
     }
@@ -143,11 +200,11 @@ export function useWorkoutEngine({ templateId, existingSessionId, onFinish }: Us
     setSaving(true);
     try {
       await workoutService.discardWorkout(session.id);
-      onFinish();
+      onDiscard();
     } finally {
       setSaving(false);
     }
-  }, [session, saving, workoutService, onFinish]);
+  }, [session, saving, workoutService, onDiscard]);
 
   const refresh = useCallback(async () => {
     if (!session) return;
@@ -157,13 +214,25 @@ export function useWorkoutEngine({ templateId, existingSessionId, onFinish }: Us
   const formatTime = useCallback((seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainder = seconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}`;
+    return `${minutes.toString().padStart(2, "0")}:${remainder.toString().padStart(2, "0")}`;
   }, []);
 
   return {
-    session, elapsed, isPaused, saving,
-    handleSetUpdate, toggleSetComplete, addExercise, removeExercise, addSet, removeSet,
-    handlePause, handleResume, handleFinish, handleDiscard, formatTime,
+    session,
+    elapsed,
+    isPaused,
+    saving,
+    handleSetUpdate,
+    toggleSetComplete,
+    addExercise,
+    removeExercise,
+    addSet,
+    removeSet,
+    handlePause,
+    handleResume,
+    handleFinish,
+    handleDiscard,
+    formatTime,
     refresh,
   };
 }

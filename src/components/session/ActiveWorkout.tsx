@@ -30,12 +30,14 @@ import { createGymService } from "../../modules/gym";
 import {
   createWorkoutService,
   type WorkoutReplacementReason,
+  type WorkoutSession,
 } from "../../modules/workout";
 
 interface ActiveWorkoutProps {
   templateId?: string;
   existingSessionId?: string;
-  onFinish: () => void;
+  onFinish: (session: WorkoutSession) => void;
+  onDiscard: () => void;
   onLeave: () => void;
 }
 
@@ -43,9 +45,15 @@ export function ActiveWorkout({
   templateId,
   existingSessionId,
   onFinish,
+  onDiscard,
   onLeave,
 }: ActiveWorkoutProps) {
-  const engine = useWorkoutEngine({ templateId, existingSessionId, onFinish });
+  const engine = useWorkoutEngine({
+    templateId,
+    existingSessionId,
+    onFinish,
+    onDiscard,
+  });
   const [pickingExercise, setPickingExercise] = useState(false);
   const [confirmation, setConfirmation] = useState<"finish" | "discard" | null>(
     null,
@@ -274,9 +282,11 @@ export function ActiveWorkout({
             </Text>
           ) : null}
           <Text style={[typography.caption, { marginTop: spacing.md }]}>
-            {replacementOptions && replacementOptions.completedSetCount > 0 && replacementExerciseId
-              ? `Completed sets will stay with the original exercise. Remaining sets will move to ${replacementOptions.options.find(option => option.exerciseId === replacementExerciseId)?.name ?? 'Exercise unavailable'}.`
-              : 'Choose a replacement to continue.'}
+            {replacementOptions &&
+            replacementOptions.completedSetCount > 0 &&
+            replacementExerciseId
+              ? `Completed sets will stay with the original exercise. Remaining sets will move to ${replacementOptions.options.find((option) => option.exerciseId === replacementExerciseId)?.name ?? "Exercise unavailable"}.`
+              : "Choose a replacement to continue."}
           </Text>
           <View style={styles.confirmActions}>
             <TouchableOpacity
