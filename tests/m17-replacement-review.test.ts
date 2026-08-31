@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReplacementReviewService } from '../src/modules/replacement-review';
 import type { ProgramGymMatchResult } from '../src/modules/program-matching';
+import { presentReplacementReviewItem } from '../src/lib/replacement-review-presentation';
 
 const match: ProgramGymMatchResult = { programId: 'p', gymId: 'g', status: 'requires_adaptation', emptyProgram: false, summary: { totalExercises: 2, executable: 0, executableWithWarning: 0, notExecutable: 2, replaceable: 2, unresolved: 0 }, exercises: [
   { order: 0, exerciseId: 'x', originalProgramExercise: { id: 'entry-a', exerciseId: 'x', order: 0, targetSets: [] }, match: { exerciseId: 'x', gymId: 'g', status: 'not_executable', groupEvaluations: [], issues: [], alternatives: [{ exerciseId: 'a', compatibilityStatus: 'executable', candidateScore: 2, candidateSources: ['curated'], candidateReasons: ['curated_substitution'], selectedRequirementGroupId: null, issues: [] }, { exerciseId: 'b', compatibilityStatus: 'executable_with_warning', candidateScore: 1, candidateSources: ['same_family'], candidateReasons: ['same_movement_family'], selectedRequirementGroupId: null, issues: [] }] }, recommendedAlternativeExerciseId: 'a' },
@@ -26,4 +27,20 @@ test('M17 can clear a selection and refuses incomplete or blocked reviews', () =
   assert.equal(cleared.status, 'incomplete');
   assert.throws(() => service.validateReplacementReview(cleared), /REVIEW_INCOMPLETE/);
   assert.throws(() => service.validateReplacementReview(review), /NO_REPLACEMENT_AVAILABLE/);
+});
+
+test('M21 recommendation remains pending until selection and preserves a non-recommended choice', () => {
+  const service = createReplacementReviewService();
+  const review = service.createReplacementReview({ matchResult: match, programUpdatedAt: 1 });
+  const selectable = { ...review, items: review.items.slice(0, 1), status: 'incomplete' as const };
+  const names = { gymName: 'Gym A', exercises: { x: 'Bench Press', a: 'Dumbbell Bench Press', b: 'Push-up' }, equipment: {} };
+
+  assert.equal(selectable.items[0].decision.status, 'pending');
+  assert.equal(presentReplacementReviewItem(selectable.items[0], names).options[0].isRecommended, true);
+  assert.equal(presentReplacementReviewItem(selectable.items[0], names).selectedExerciseId, null);
+
+  const selected = service.selectReplacement({ review: selectable, programExerciseKey: 'entry-a', replacementExerciseId: 'b' });
+  const refreshed = presentReplacementReviewItem(selected.items[0], names);
+  assert.equal(refreshed.options[0].isRecommended, true);
+  assert.equal(refreshed.selectedExerciseId, 'b');
 });
