@@ -10,9 +10,11 @@ test('Replacement Review presentation maps each equipment evidence fact without 
   assert.equal(presentReplacementIssue({ code: 'equipment_unavailable', equipmentId: 'barbell' }, names), 'Barbell is not available here.');
   assert.equal(presentReplacementIssue({ code: 'equipment_availability_unknown', equipmentId: 'barbell' }, names), 'Availability for Barbell is unknown.');
   assert.equal(presentReplacementIssue({ code: 'insufficient_capability', equipmentId: 'cable' }, names), 'This Cable station does not support the required setup.');
+  assert.equal(presentReplacementIssue({ code: 'unknown_capability', equipmentId: 'cable' }, names), 'GymFlow cannot confirm whether this Cable station supports the required setup.');
   assert.equal(presentReplacementIssue({ code: 'missing_preferred_equipment', equipmentId: 'barbell' }, names), 'This Program can still run, but the preferred Barbell is unavailable.');
   assert.equal(presentReplacementIssue({ code: 'missing_required_equipment' }, { gymName: 'Gym A', exercises: {}, equipment: {} }), 'Required equipment is unavailable.');
   assert.equal(presentReplacementIssue({ code: 'equipment_availability_unknown' }, { gymName: 'Gym A', exercises: {}, equipment: {} }), 'Availability for the required equipment is unknown.');
+  assert.equal(presentReplacementIssue({ code: 'unknown_capability' }, { gymName: 'Gym A', exercises: {}, equipment: {} }), 'GymFlow cannot confirm whether the required equipment supports the required setup.');
 });
 
 test('Replacement Review presentation marks but does not select the recommended candidate', () => {
