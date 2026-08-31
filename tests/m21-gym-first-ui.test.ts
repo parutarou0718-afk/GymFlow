@@ -50,3 +50,25 @@ test('M21 Current Gym selection preserves Home, Favorite, Visit, and Membership 
   assert.equal(await contexts.getCurrentGym(DEFAULT_LOCAL_USER_ID), selected.id);
   assert.deepEqual(await userGyms.listUserGyms(DEFAULT_LOCAL_USER_ID), before);
 });
+
+test('M21 Home treats a closed stored Current Gym as unavailable without mutating related state', async () => {
+  const source = await readFile(resolve(process.cwd(), 'app/(tabs)/index.tsx'), 'utf8');
+  const store = createWebStore();
+  const gyms = createGymService(store);
+  const contexts = createGymContextService(store);
+  const userGyms = createUserGymService(store);
+  const gym = await gyms.createGym({ name: 'Closing Gym' });
+  await userGyms.setHomeGym(DEFAULT_LOCAL_USER_ID, gym.id);
+  await userGyms.setFavorite(DEFAULT_LOCAL_USER_ID, gym.id, true);
+  await contexts.setCurrentGym(DEFAULT_LOCAL_USER_ID, gym.id);
+  await gyms.archiveGym(gym.id);
+  const beforeRelationships = await userGyms.listUserGyms(DEFAULT_LOCAL_USER_ID);
+
+  const resolved = await gyms.getGym(await contexts.getCurrentGym(DEFAULT_LOCAL_USER_ID) ?? '');
+  const homeCurrentGym = resolved?.status === 'active' ? resolved : null;
+
+  assert.equal(homeCurrentGym, null);
+  assert.equal(await contexts.getCurrentGym(DEFAULT_LOCAL_USER_ID), gym.id);
+  assert.deepEqual(await userGyms.listUserGyms(DEFAULT_LOCAL_USER_ID), beforeRelationships);
+  assert.match(source, /availableCurrentGym = resolvedCurrentGym\?\.status === 'active' \? resolvedCurrentGym : null/);
+});

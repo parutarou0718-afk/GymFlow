@@ -59,8 +59,9 @@ export default function HomeScreen() {
       currentGymId ? gymApi.getGym(currentGymId) : null,
       activeSession?.gymId ? gymApi.getGym(activeSession.gymId) : null,
     ]);
-    setCurrentGym(resolvedCurrentGym);
-    setCurrentGymUnavailable(Boolean(currentGymId && !resolvedCurrentGym));
+    const availableCurrentGym = resolvedCurrentGym?.status === 'active' ? resolvedCurrentGym : null;
+    setCurrentGym(availableCurrentGym);
+    setCurrentGymUnavailable(Boolean(currentGymId && !availableCurrentGym));
     setActiveGymName(resolvedActiveGym?.name ?? null);
     setHomeGym(home); setRecentGyms(recent);
   }, [contextApi, gymApi, programApi, userGymApi, workoutApi]);
