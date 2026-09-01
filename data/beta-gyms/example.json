@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "source": { "name": "sample_operator_data", "reference": "example-only-not-real-gym", "verifiedAt": "2026-09-01T00:00:00Z" },
+  "gyms": [
+    { "operatorGymKey": "sample-gym-001", "name": "Sample Gym — Not a real venue", "status": "active", "inventory": [
+      { "equipmentId": "web-equipment-7", "quantity": 1, "status": "available", "verified": false }
+    ] }
+  ]
+}
