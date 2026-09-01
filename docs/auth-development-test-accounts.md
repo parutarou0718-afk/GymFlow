@@ -32,6 +32,8 @@ Run the server with `npm --prefix server run dev`. Apply Better Auth's generated
 
 For an Android emulator, the app must use an emulator-reachable host such as `http://10.0.2.2:3001` for `EXPO_PUBLIC_AUTH_BASE_URL`; a physical device must use a reachable HTTPS/LAN endpoint. Do not use a host loopback address from the device.
 
+The standalone Android `qa` profile sets `EXPO_PUBLIC_GYMFLOW_ENV=test` and `EXPO_PUBLIC_AUTH_BASE_URL=http://10.0.2.2:3001`. Its native build enables Android cleartext traffic only for `development` and `test`; preview and production build manifests remain HTTPS-only.
+
 ## Development account flow
 
 Set both build values for a development build:

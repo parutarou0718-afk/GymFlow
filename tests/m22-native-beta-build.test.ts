@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import test from 'node:test';
+
+const require = createRequire(import.meta.url);
 
 test('M22.3 keeps production profiles unchanged and provides a standalone Android emulator QA profile', async () => {
   const [easText, supabaseSource] = await Promise.all([
@@ -19,4 +22,19 @@ test('M22.3 keeps production profiles unchanged and provides a standalone Androi
   assert.match(supabaseSource, /EXPO_PUBLIC_SUPABASE_URL/);
   assert.match(supabaseSource, /EXPO_PUBLIC_SUPABASE_ANON_KEY/);
   assert.doesNotMatch(easText, /service_role|SUPABASE_ANON_KEY|SUPABASE_URL/i);
+});
+
+test('Android cleartext is enabled only for development and test native builds', () => {
+  const { createAppConfig } = require('../app.config.js') as { createAppConfig: (environment: string) => { android?: { usesCleartextTraffic?: boolean } } };
+
+  const cleartextSetting = (environment: string) => {
+    const config = createAppConfig(environment) as { plugins?: unknown[] };
+    const plugin = config.plugins?.find((entry): entry is [string, { android?: { usesCleartextTraffic?: boolean } }] => Array.isArray(entry) && entry[0] === 'expo-build-properties');
+    return plugin?.[1].android?.usesCleartextTraffic;
+  };
+
+  assert.equal(cleartextSetting('development'), true);
+  assert.equal(cleartextSetting('test'), true);
+  assert.equal(cleartextSetting('preview'), false);
+  assert.equal(cleartextSetting('production'), false);
 });
