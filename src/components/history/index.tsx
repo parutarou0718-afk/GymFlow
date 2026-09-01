@@ -17,6 +17,7 @@ import { Card, Badge, EmptyState, Divider, Metric } from '../ui';
 import { useStores } from '../../db/stores';
 import { createWorkoutService } from '../../modules/workout';
 import { createGymService } from '../../modules/gym';
+import { useCurrentUser } from '../../modules/current-user';
 import { createProgramInputFromCompletedWorkout, createProgramService } from '../../modules/program';
 import { formatDate, formatShortDate, formatDuration, formatVolume, calculateVolume } from '../../lib/utils';
 import type { WorkoutSession } from '../../modules/workout';
@@ -136,6 +137,7 @@ interface SessionDetailProps {
 }
 
 export function SessionDetail({ sessionId, onBack, onOpenGym, onOpenProgram }: SessionDetailProps) {
+  const { user } = useCurrentUser();
   const store = useStores();
   const workoutService = useMemo(() => createWorkoutService(store), [store]);
   const programService = useMemo(() => createProgramService(store), [store]);
@@ -149,7 +151,7 @@ export function SessionDetail({ sessionId, onBack, onOpenGym, onOpenProgram }: S
 
   React.useEffect(() => {
     const load = async () => {
-      const s = await workoutService.getWorkoutHistoryDetail(sessionId);
+      const s = user ? await workoutService.getWorkoutHistoryDetailForOwner(user.id, sessionId) : null;
       if (s) {
         // Enrich with exercise data
         s.exercises = s.exercises.map(ex => ({
@@ -162,7 +164,7 @@ export function SessionDetail({ sessionId, onBack, onOpenGym, onOpenProgram }: S
       setLoading(false);
     };
     load();
-  }, [gymService, sessionId, workoutService]);
+  }, [gymService, sessionId, user, workoutService]);
 
   if (loading) return null;
   if (!session) return <Text style={{ padding: spacing.lg, color: colors.textSecondary }}>Session not found</Text>;
@@ -177,7 +179,8 @@ export function SessionDetail({ sessionId, onBack, onOpenGym, onOpenProgram }: S
     if (savingProgram || !programName.trim()) return;
     setSavingProgram(true);
     try {
-      await programService.createProgram(createProgramInputFromCompletedWorkout(session, programName));
+      if (!user) return;
+      await programService.createProgramForOwner(user.id, createProgramInputFromCompletedWorkout(session, programName));
       setShowSaveProgram(false);
     } finally {
       setSavingProgram(false);

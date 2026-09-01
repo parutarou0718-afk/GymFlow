@@ -8,6 +8,7 @@ import { createGymService } from '../src/modules/gym';
 import { createGymContextService } from '../src/modules/gym-context';
 import { createUserGymService } from '../src/modules/user-gym';
 import { readFile } from 'node:fs/promises';
+import { exerciseDB } from '../src/lib/exercise-db';
 
 const principalA: AuthenticatedPrincipal = {
   provider: 'supabase',
@@ -90,4 +91,45 @@ test('product runtime keeps Supabase and local-default identity out of business 
     'src/modules/program/program-service.ts', 'src/modules/workout/workout-service.ts', 'src/modules/gym-context/gym-context-service.ts', 'src/modules/social/social-service.ts',
   ].map(path => readFile(path, 'utf8')));
   assert.equal(modules.some(source => source.includes("from '@supabase") || source.includes('from "@supabase')), false);
+});
+
+test('private Workout runtime paths do not call unscoped detail or history APIs', async () => {
+  const sources = await Promise.all([
+    'src/hooks/useWorkoutEngine.ts', 'app/workout-complete.tsx', 'app/(tabs)/history.tsx', 'src/components/history/index.tsx',
+  ].map(path => readFile(path, 'utf8')));
+  assert.equal(sources.some(source => /\bgetWorkout\(|\bgetWorkoutHistoryDetail\(|\bgetWorkoutHistory\(/.test(source)), false);
+});
+
+test('a known active Workout ID cannot be loaded or mutated by another owner', async () => {
+  const store = createWebStore();
+  const users = createUserService(store);
+  const a = await users.resolveAuthenticatedUser(principalA);
+  const b = await users.resolveAuthenticatedUser(principalB);
+  const workouts = createWorkoutService(store);
+  const started = await workouts.startQuickWorkoutForOwner(a.id);
+  const withExercise = await workouts.addExerciseForOwner(a.id, started.id, exerciseDB.getById('bench_press')!);
+  const withSet = await workouts.addSetForOwner(a.id, started.id, withExercise.exercises[0].id);
+
+  assert.equal(await workouts.getWorkoutForOwner(b.id, started.id), null);
+  await assert.rejects(() => workouts.updateSetForOwner(b.id, started.id, withExercise.exercises[0].id, withSet.exercises[0].sets[0].setIndex, { reps: 99 }), /WORKOUT_NOT_FOUND/);
+  await assert.rejects(() => workouts.finishWorkoutForOwner(b.id, started.id), /WORKOUT_NOT_FOUND/);
+  const unchanged = await workouts.getWorkoutForOwner(a.id, started.id);
+  assert.equal(unchanged?.status, 'active');
+  assert.equal(unchanged?.exercises[0].sets[0].reps, 0);
+  assert.equal((await store.events.getForSession(started.id)).some(event => event.eventType === 'WORKOUT_COMPLETED'), false);
+  assert.deepEqual(await workouts.getWorkoutHistoryForOwner(b.id), []);
+});
+
+test('a completed Workout detail remains unavailable to another owner', async () => {
+  const store = createWebStore();
+  const users = createUserService(store);
+  const a = await users.resolveAuthenticatedUser(principalA);
+  const b = await users.resolveAuthenticatedUser(principalB);
+  const workouts = createWorkoutService(store);
+  const started = await workouts.startQuickWorkoutForOwner(a.id);
+
+  await workouts.finishWorkoutForOwner(a.id, started.id);
+
+  assert.equal(await workouts.getWorkoutHistoryDetailForOwner(b.id, started.id), null);
+  assert.equal((await workouts.getWorkoutHistoryDetailForOwner(a.id, started.id))?.status, 'completed');
 });

@@ -8,6 +8,7 @@ import { AppState } from "react-native";
 import { useStores } from "../db/stores";
 import { createWorkoutService } from "../modules/workout";
 import type { Exercise, WorkoutSession } from "../modules/workout";
+import { useCurrentUser } from '../modules/current-user';
 
 export interface UseWorkoutEngineOptions {
   templateId?: string;
@@ -46,6 +47,7 @@ export function useWorkoutEngine({
   onFinish,
   onDiscard,
 }: UseWorkoutEngineOptions): UseWorkoutEngineReturn {
+  const { user } = useCurrentUser();
   const store = useStores();
   const workoutService = useMemo(() => createWorkoutService(store), [store]);
   const [session, setSession] = useState<WorkoutSession | null>(null);
@@ -57,18 +59,19 @@ export function useWorkoutEngine({
 
   useEffect(() => {
     const init = async () => {
+      if (!user) return;
       const loaded = existingSessionId
-        ? await workoutService.getWorkout(existingSessionId)
+        ? await workoutService.getWorkoutForOwner(user.id, existingSessionId)
         : templateId
-          ? await workoutService.startWorkoutFromTemplate(templateId)
-          : await workoutService.startQuickWorkout();
+          ? await workoutService.startWorkoutFromTemplateForOwner(user.id, templateId)
+          : await workoutService.startQuickWorkoutForOwner(user.id);
       if (!loaded) return;
       setSession(loaded);
       setElapsed(Math.floor((Date.now() - loaded.startedAt) / 1000));
       setIsPaused(loaded.status === "paused");
     };
     void init();
-  }, [existingSessionId, templateId, workoutService]);
+  }, [existingSessionId, templateId, user, workoutService]);
 
   useEffect(() => {
     if (!session || isPaused) {
@@ -89,15 +92,17 @@ export function useWorkoutEngine({
 
   const handlePause = useCallback(async () => {
     if (!session || saving) return;
-    setSession(await workoutService.pauseWorkout(session.id));
+    if (!user) return;
+    setSession(await workoutService.pauseWorkoutForOwner(user.id, session.id));
     setIsPaused(true);
-  }, [session, saving, workoutService]);
+  }, [session, saving, user, workoutService]);
 
   const handleResume = useCallback(async () => {
     if (!session || saving) return;
-    setSession(await workoutService.resumeWorkout(session.id));
+    if (!user) return;
+    setSession(await workoutService.resumeWorkoutForOwner(user.id, session.id));
     setIsPaused(false);
-  }, [session, saving, workoutService]);
+  }, [session, saving, user, workoutService]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener(
@@ -125,13 +130,14 @@ export function useWorkoutEngine({
       value: number,
     ) => {
       if (!session || saving) return;
+      if (!user) return;
       setSession(
-        await workoutService.updateSet(session.id, exerciseId, setIndex, {
+        await workoutService.updateSetForOwner(user.id, session.id, exerciseId, setIndex, {
           [field]: value,
         }),
       );
     },
-    [session, saving, workoutService],
+    [session, saving, user, workoutService],
   );
 
   const toggleSetComplete = useCallback(
@@ -141,75 +147,83 @@ export function useWorkoutEngine({
         (exercise) => exercise.id === exerciseId,
       )?.sets[setIndex]?.completed;
       if (completed === undefined) return;
+      if (!user) return;
       setSession(
-        await workoutService.updateSet(session.id, exerciseId, setIndex, {
+        await workoutService.updateSetForOwner(user.id, session.id, exerciseId, setIndex, {
           completed,
         }),
       );
     },
-    [session, saving, workoutService],
+    [session, saving, user, workoutService],
   );
 
   const addExercise = useCallback(
     async (exercise: Exercise) => {
       if (!session || saving) return;
-      setSession(await workoutService.addExercise(session.id, exercise));
+      if (!user) return;
+      setSession(await workoutService.addExerciseForOwner(user.id, session.id, exercise));
     },
-    [session, saving, workoutService],
+    [session, saving, user, workoutService],
   );
 
   const removeExercise = useCallback(
     async (exerciseId: string) => {
       if (!session || saving) return;
-      setSession(await workoutService.removeExercise(session.id, exerciseId));
+      if (!user) return;
+      setSession(await workoutService.removeExerciseForOwner(user.id, session.id, exerciseId));
     },
-    [session, saving, workoutService],
+    [session, saving, user, workoutService],
   );
 
   const addSet = useCallback(
     async (exerciseId: string) => {
       if (!session || saving) return;
-      setSession(await workoutService.addSet(session.id, exerciseId));
+      if (!user) return;
+      setSession(await workoutService.addSetForOwner(user.id, session.id, exerciseId));
     },
-    [session, saving, workoutService],
+    [session, saving, user, workoutService],
   );
 
   const removeSet = useCallback(
     async (exerciseId: string, setIndex: number) => {
       if (!session || saving) return;
+      if (!user) return;
       setSession(
-        await workoutService.removeSet(session.id, exerciseId, setIndex),
+        await workoutService.removeSetForOwner(user.id, session.id, exerciseId, setIndex),
       );
     },
-    [session, saving, workoutService],
+    [session, saving, user, workoutService],
   );
 
   const handleFinish = useCallback(async () => {
     if (!session || saving) return;
     setSaving(true);
     try {
-      const completed = await workoutService.finishWorkout(session.id);
+      if (!user) return;
+      const completed = await workoutService.finishWorkoutForOwner(user.id, session.id);
       onFinish(completed);
     } finally {
       setSaving(false);
     }
-  }, [session, saving, workoutService, onFinish]);
+  }, [session, saving, user, workoutService, onFinish]);
 
   const handleDiscard = useCallback(async () => {
     if (!session || saving) return;
     setSaving(true);
     try {
-      await workoutService.discardWorkout(session.id);
+      if (!user) return;
+      await workoutService.discardWorkoutForOwner(user.id, session.id);
       onDiscard();
     } finally {
       setSaving(false);
     }
-  }, [session, saving, workoutService, onDiscard]);
+  }, [session, saving, user, workoutService, onDiscard]);
 
   const refresh = useCallback(async () => {
     if (!session) return;
-    setSession(await workoutService.getWorkout(session.id));
-  }, [session, workoutService]);
+    if (!user) return;
+    setSession(await workoutService.getWorkoutForOwner(user.id, session.id));
+  }, [session, user, workoutService]);
 
   const formatTime = useCallback((seconds: number) => {
     const minutes = Math.floor(seconds / 60);

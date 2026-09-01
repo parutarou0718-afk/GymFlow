@@ -32,6 +32,7 @@ import {
   type WorkoutReplacementReason,
   type WorkoutSession,
 } from "../../modules/workout";
+import { useCurrentUser } from '../../modules/current-user';
 
 interface ActiveWorkoutProps {
   templateId?: string;
@@ -48,6 +49,7 @@ export function ActiveWorkout({
   onDiscard,
   onLeave,
 }: ActiveWorkoutProps) {
+  const { user } = useCurrentUser();
   const engine = useWorkoutEngine({
     templateId,
     existingSessionId,
@@ -94,9 +96,9 @@ export function ActiveWorkout({
     });
   }, [engine.session?.gymId, gymApi]);
   const openReplacement = async (sessionExerciseId: string) => {
-    if (!engine.session || engine.saving) return;
+    if (!engine.session || engine.saving || !user) return;
     try {
-      const options = await replacementApi.getWorkoutReplacementOptions({
+      const options = await replacementApi.getWorkoutReplacementOptionsForOwner(user.id, {
         sessionId: engine.session.id,
         sessionExerciseId,
       });
@@ -114,13 +116,13 @@ export function ActiveWorkout({
     if (
       !replacementOptions ||
       !replacementExerciseId ||
-      !replacementReason ||
+      !replacementReason || !user ||
       replacing
     )
       return;
     setReplacing(true);
     try {
-      await replacementApi.replaceExercise({
+      await replacementApi.replaceExerciseForOwner(user.id, {
         sessionId: replacementOptions.sessionId,
         sessionExerciseId: replacementOptions.sessionExerciseId,
         replacementExerciseId,

@@ -9,7 +9,7 @@ test("M21 Slice 5 reloads workout completion by sessionId through public service
     "utf8",
   );
 
-  assert.match(source, /getWorkoutHistoryDetail\(sessionId\)/);
+  assert.match(source, /getWorkoutHistoryDetailForOwner\(user\.id, sessionId\)/);
   assert.match(source, /createGymService/);
   assert.match(source, /createExerciseService/);
   assert.doesNotMatch(source, /store\.(sessions|events|gyms|exercises)/);
@@ -27,7 +27,7 @@ test("M21 Slice 5 only routes a persisted completion to its summary", async () =
 
   assert.match(
     hook,
-    /const completed = await workoutService\.finishWorkout\(session\.id\)/,
+    /const completed = await workoutService\.finishWorkoutForOwner\(user\.id, session\.id\)/,
   );
   assert.match(hook, /onFinish\(completed\)/);
   assert.match(screen, /workout-complete/);

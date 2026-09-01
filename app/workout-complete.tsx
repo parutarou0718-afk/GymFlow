@@ -17,6 +17,7 @@ import {
   getReplacementCount,
 } from "../src/lib/workout-completion-presentation";
 import { colors, radius, spacing, typography } from "../src/lib/theme";
+import { useCurrentUser } from '../src/modules/current-user';
 
 type SummaryExercise = {
   id: string;
@@ -26,6 +27,7 @@ type SummaryExercise = {
 };
 
 export default function WorkoutCompleteScreen() {
+  const { user } = useCurrentUser();
   const router = useRouter();
   const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
   const store = useStores();
@@ -40,12 +42,12 @@ export default function WorkoutCompleteScreen() {
   const [loading, setLoading] = useState(true);
 
   const loadSummary = useCallback(async () => {
-    if (!sessionId) {
+    if (!sessionId || !user) {
       setLoading(false);
       return;
     }
 
-    const completed = await workoutService.getWorkoutHistoryDetail(sessionId);
+    const completed = await workoutService.getWorkoutHistoryDetailForOwner(user.id, sessionId);
     if (!completed || completed.status !== "completed") {
       setLoading(false);
       return;
@@ -54,7 +56,7 @@ export default function WorkoutCompleteScreen() {
     const [gym, program, resolvedExercises] = await Promise.all([
       completed.gymId ? gymService.getGym(completed.gymId) : null,
       completed.templateId
-        ? programService.getProgram(completed.templateId)
+        ? programService.getProgramForOwner(user.id, completed.templateId)
         : null,
       Promise.all(
         completed.exercises
@@ -88,7 +90,7 @@ export default function WorkoutCompleteScreen() {
     setProgramName(program?.name ?? completed.templateName ?? null);
     setExercises(resolvedExercises);
     setLoading(false);
-  }, [exerciseService, gymService, programService, sessionId, workoutService]);
+  }, [exerciseService, gymService, programService, sessionId, user, workoutService]);
 
   useEffect(() => {
     void loadSummary();

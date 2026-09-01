@@ -14,8 +14,10 @@ import { HistoryList } from '../../src/components/history';
 import { useStores } from '../../src/db/stores';
 import { createWorkoutService } from '../../src/modules/workout';
 import type { WorkoutSession } from '../../src/modules/workout';
+import { useCurrentUser } from '../../src/modules/current-user';
 
 export default function HistoryScreen() {
+  const { user } = useCurrentUser();
   const router = useRouter();
   const store = useStores();
   const workoutService = useMemo(() => createWorkoutService(store), [store]);
@@ -24,10 +26,10 @@ export default function HistoryScreen() {
 
   const loadSessions = useCallback(async () => {
     setLoading(true);
-    const s = await workoutService.getWorkoutHistory();
+    const s = user ? await workoutService.getWorkoutHistoryForOwner(user.id) : [];
     setSessionList(s);
     setLoading(false);
-  }, [workoutService]);
+  }, [user, workoutService]);
 
   useFocusEffect(
     useCallback(() => {
