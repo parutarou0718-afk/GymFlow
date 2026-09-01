@@ -4,7 +4,7 @@ export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced' | 'unknow
 export type TrainingGoal = 'strength' | 'hypertrophy' | 'general_fitness' | 'conditioning' | 'mobility';
 export type UserStatus = 'active' | 'archived';
 export type UserVisibility = 'private' | 'followers' | 'public';
-export type AuthProvider = 'supabase';
+export type AuthProvider = 'supabase' | 'better-auth';
 
 export interface AuthenticatedPrincipal {
   provider: AuthProvider;

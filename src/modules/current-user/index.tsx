@@ -1,8 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Platform } from 'react-native';
 import { useStores } from '../../db/stores';
-import { getCurrentUser as getSupabaseUser } from '../../lib/supabase';
-import { createUserService, DEFAULT_LOCAL_USER_ID, type AuthenticatedPrincipal, type UserProfile } from '../user';
+import { getAuthClient } from '../auth-client';
+import { createUserService, type UserProfile } from '../user';
 
 export type CurrentUserState =
   | { status: 'loading'; user: null }
@@ -16,14 +15,6 @@ type CurrentUserContextValue = CurrentUserState & {
 
 const CurrentUserContext = createContext<CurrentUserContextValue | null>(null);
 
-function normalizePrincipal(value: unknown): AuthenticatedPrincipal | null {
-  if (!value || typeof value !== 'object') return null;
-  const user = value as { id?: unknown; email?: unknown; user_metadata?: { full_name?: unknown; name?: unknown } };
-  if (typeof user.id !== 'string' || !user.id.trim()) return null;
-  const displayName = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : typeof user.user_metadata?.name === 'string' ? user.user_metadata.name : null;
-  return { provider: 'supabase', subject: user.id, email: typeof user.email === 'string' ? user.email : null, displayName };
-}
-
 export function CurrentUserProvider({ children }: { children: React.ReactNode }) {
   const store = useStores();
   const users = useMemo(() => createUserService(store), [store]);
@@ -31,13 +22,7 @@ export function CurrentUserProvider({ children }: { children: React.ReactNode })
   const refresh = useCallback(async () => {
     setState({ status: 'loading', user: null });
     try {
-      if (Platform.OS === 'web') {
-        const user = await users.getUser(DEFAULT_LOCAL_USER_ID);
-        if (!user) throw new Error('Local demo user is unavailable');
-        setState({ status: 'authenticated', user });
-        return;
-      }
-      const principal = normalizePrincipal(await getSupabaseUser());
+      const principal = await getAuthClient().getPrincipal();
       if (!principal) {
         setState({ status: 'logged-out', user: null });
         return;

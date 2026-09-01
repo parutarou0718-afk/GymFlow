@@ -3,7 +3,7 @@ import { completeSession, pauseSession, resumeSession } from '../../lib/workout-
 import type { CompletedSet, Exercise, SessionExercise, WorkoutReplacementReason, WorkoutSession, WorkoutSnapshot, WorkoutTemplate } from '../../types';
 import type { WorkoutStore } from './ports';
 import { createUserGymService } from '../user-gym';
-import { createUserService, DEFAULT_LOCAL_USER_ID } from '../user';
+import { createUserService } from '../user';
 
 type SetUpdate = { weight?: number; reps?: number; completed?: boolean };
 export type ListCompletedWorkoutsOptions = { gymId?: string | null; limit?: number };

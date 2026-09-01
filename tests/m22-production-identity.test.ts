@@ -11,14 +11,14 @@ import { readFile } from 'node:fs/promises';
 import { exerciseDB } from '../src/lib/exercise-db';
 
 const principalA: AuthenticatedPrincipal = {
-  provider: 'supabase',
+  provider: 'better-auth',
   subject: 'auth-subject-a',
   email: 'a@example.test',
   displayName: 'Athlete A',
 };
 
 const principalB: AuthenticatedPrincipal = {
-  provider: 'supabase',
+  provider: 'better-auth',
   subject: 'auth-subject-b',
   email: 'b@example.test',
   displayName: 'Athlete B',
@@ -33,7 +33,7 @@ test('resolves the same authenticated principal to one stable Domain User', asyn
 
   assert.equal(first.id, second.id);
   assert.notEqual(first.id, other.id);
-  assert.equal(first.authProvider, 'supabase');
+  assert.equal(first.authProvider, 'better-auth');
   assert.equal(first.authSubject, 'auth-subject-a');
 });
 

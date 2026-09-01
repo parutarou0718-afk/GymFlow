@@ -6,6 +6,7 @@ import { createUserService } from '../../src/modules/user';
 import type { ExperienceLevel, TrainingGoal, UserPrivacySettings, UserProfile, UserTrainingPreferences, UserVisibility } from '../../src/modules/user';
 import { Button, Card, Input, SectionHeader } from '../../src/components/ui';
 import { colors, spacing, typography } from '../../src/lib/theme';
+import { useCurrentUser } from '../../src/modules/current-user';
 
 const experienceLevels: ExperienceLevel[] = ['unknown', 'beginner', 'intermediate', 'advanced'];
 const goals: TrainingGoal[] = ['strength', 'hypertrophy', 'general_fitness', 'conditioning', 'mobility'];
@@ -17,6 +18,7 @@ function nextValue<T>(values: readonly T[], current: T): T {
 }
 
 export default function ProfileScreen() {
+  const identity = useCurrentUser();
   const store = useStores();
   const api = useMemo(() => createUserService(store), [store]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -29,7 +31,8 @@ export default function ProfileScreen() {
   const [message, setMessage] = useState('');
 
   const load = useCallback(async () => {
-    const current = await api.getCurrentUser();
+    const current = identity.user;
+    if (!current) return;
     setProfile(current);
     setDisplayName(current.displayName);
     setExperienceLevel(current.experienceLevel);
@@ -37,7 +40,7 @@ export default function ProfileScreen() {
     setPreferences(current.preferences);
     setPrivacy(current.privacy);
     setMessage('Reloaded saved profile');
-  }, [api]);
+  }, [api, identity.user]);
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 

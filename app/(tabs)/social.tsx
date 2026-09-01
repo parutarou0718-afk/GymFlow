@@ -6,10 +6,12 @@ import { createSocialService, type SocialPostView, type SocialVisibility } from 
 import { createUserService, type UserProfile } from '../../src/modules/user';
 import { colors, spacing, typography } from '../../src/lib/theme';
 import { Button, Card, SectionHeader } from '../../src/components/ui';
+import { useCurrentUser } from '../../src/modules/current-user';
 
 const visibilities: SocialVisibility[] = ['private', 'followers', 'public'];
 
 export default function SocialScreen() {
+  const identity = useCurrentUser();
   const attached = useLocalSearchParams<{ workoutSessionId?: string; programId?: string; gymId?: string }>();
   const store = useStores();
   const social = useMemo(() => createSocialService(store), [store]);
@@ -27,13 +29,14 @@ export default function SocialScreen() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const current = await users.getCurrentUser();
+    const current = identity.user;
+    if (!current) return;
     const page = await social.listPublicFeed({ viewerUserId: current.id, limit: 20 });
     const views = await Promise.all(page.posts.map(post => social.getPostView({ postId: post.id, viewerUserId: current.id })));
     setCurrentUserId(current.id);
     setPosts(views);
     setOtherUsers((await users.listUsers()).filter(user => user.id !== current.id));
-  }, [social, users]);
+  }, [identity.user, social, users]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   useFocusEffect(useCallback(() => {
     if (attached.workoutSessionId) setWorkoutSessionId(attached.workoutSessionId);
