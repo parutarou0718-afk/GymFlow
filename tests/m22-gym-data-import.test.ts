@@ -3,6 +3,9 @@ import test from 'node:test';
 import { createWebStore } from '../src/db/web-store';
 import { createGymDataImportService, type GymImportData } from '../src/modules/gym-data-import';
 import { createGymService } from '../src/modules/gym';
+import { createExerciseService } from '../src/modules/exercise';
+import { createExerciseEquipmentService } from '../src/modules/exercise-equipment';
+import { createMatchingService } from '../src/modules/matching';
 
 const data: GymImportData = {
   schemaVersion: 1,
@@ -48,4 +51,15 @@ test('duplicate rows and conflicting Gym identities fail before mutation', async
   await gyms.createGym({ name: 'Key Gym', operatorGymKey: 'key-a' });
   await gyms.createGym({ name: 'External Gym', externalProvider: 'osm', externalPlaceId: 'x' });
   await assert.rejects(() => importer.plan({ ...data, gyms: [{ ...data.gyms[0], operatorGymKey: 'key-a', externalProvider: 'osm', externalPlaceId: 'x' }] }), /Conflicting Gym identities/);
+});
+
+test('imported inventory feeds the existing matching engine', async () => {
+  const store = createWebStore(); const importer = createGymDataImportService(store);
+  const input: GymImportData = { ...data, gyms: [data.gyms[0], { operatorGymKey: 'sample-osaka-002', name: 'No rack Gym', status: 'active', inventory: [{ equipmentId: 'web-equipment-6', quantity: 1, status: 'available', verified: true }] }] };
+  await importer.apply(await importer.plan(input));
+  const exercise = await createExerciseService(store).createExercise({ name: 'Imported inventory exercise', aliases: [], category: 'compound', movementPattern: 'squat', primaryMuscles: ['legs'], secondaryMuscles: [] });
+  const requirements = createExerciseEquipmentService(store); const group = await requirements.createRequirementGroup(exercise.id, {}); await requirements.addEquipmentRequirement(group.id, { equipmentId: 'web-equipment-7', level: 'required' });
+  const gyms = await store.gyms.list(); const matching = createMatchingService(store);
+  assert.equal((await matching.matchExerciseToGym({ exerciseId: exercise.id, gymId: gyms.find(gym => gym.operatorGymKey === 'sample-osaka-001')!.id, includeAlternatives: false })).status, 'executable');
+  assert.equal((await matching.matchExerciseToGym({ exerciseId: exercise.id, gymId: gyms.find(gym => gym.operatorGymKey === 'sample-osaka-002')!.id, includeAlternatives: false })).status, 'not_executable');
 });
