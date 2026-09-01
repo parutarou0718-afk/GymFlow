@@ -11,6 +11,13 @@
         "EXPO_PUBLIC_GYMFLOW_ENV": "development"
       }
     },
+    "qa": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GYMFLOW_ENV": "test",
+        "EXPO_PUBLIC_AUTH_BASE_URL": "http://10.0.2.2:3001"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "env": {
