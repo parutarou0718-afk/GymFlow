@@ -1,262 +1,71 @@
-// ========================================
-// GymFlow - Auth & Settings Component
-// ========================================
+import React, { useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { getAuthClient, allowsDevelopmentTestAccounts } from '../../modules/auth-client';
+import { colors, spacing, typography } from '../../lib/theme';
+import { Button, Card, Input } from '../ui';
 
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Alert,
-} from 'react-native';
-import { colors, spacing, radius, typography, shadows } from '../../lib/theme';
-import { Button, Card, Divider, Input } from '../ui';
-import {
-  isConfigured,
-  configureSupabase,
-  signInWithEmail,
-  signUpWithEmail,
-  signOut,
-  getCurrentUser,
-  processSyncQueue,
-  syncTemplatesToCloud,
-} from '../../lib/supabase';
-
-type AuthMode = 'login' | 'signup' | 'config';
-
-export function AuthSettings({ onClose, onIdentityChanged }: { onClose?: () => void; onIdentityChanged?: () => void }) {
-  const [configured, setConfigured] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [mode, setMode] = useState<AuthMode>('config');
-  const [supabaseUrl, setSupabaseUrl] = useState('');
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState('');
+export function AuthSettings({ onIdentityChanged }: { onIdentityChanged?: () => void }) {
+  const [displayName, setDisplayName] = useState('GymFlow Test User');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const developmentAccountsAllowed = allowsDevelopmentTestAccounts();
 
-  useEffect(() => {
-    checkConfig();
-  }, []);
-
-  const checkConfig = async () => {
-    const ok = await isConfigured();
-    setConfigured(ok);
-    if (ok) {
-      const u = await getCurrentUser();
-      setUser(u);
-      if (u) setMode('login');
-    }
-  };
-
-  const handleConfigure = async () => {
-    if (!supabaseUrl.trim() || !supabaseAnonKey.trim()) {
-      Alert.alert('Error', 'Please enter both URL and Anon Key');
-      return;
-    }
-    setLoading(true);
-    await configureSupabase(supabaseUrl.trim(), supabaseAnonKey.trim());
-    setConfigured(true);
-    setMode('login');
-    setLoading(false);
-  };
-
-  const handleLogin = async () => {
+  const submit = async (mode: 'sign-in' | 'sign-up') => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter email and password');
+      Alert.alert('Account details required', 'Enter an email and password.');
       return;
     }
-    setLoading(true);
-    const { user: u, error } = await signInWithEmail(email, password);
-    if (error) {
-      Alert.alert('Login Failed', error);
-    } else {
-      setUser(u);
+    try {
+      setLoading(true);
+      const auth = getAuthClient();
+      if (mode === 'sign-up') await auth.signUp({ displayName: displayName.trim() || 'GymFlow Test User', email: email.trim(), password });
+      else await auth.signIn({ email: email.trim(), password });
       onIdentityChanged?.();
+    } catch (error) {
+      Alert.alert('Authentication failed', error instanceof Error ? error.message : 'Unable to authenticate.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleSignUp = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter email and password');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
-    setLoading(true);
-    const { user: u, error } = await signUpWithEmail(email, password);
-    if (error) {
-      Alert.alert('Sign Up Failed', error);
-    } else {
-      Alert.alert('Success', 'Check your email for confirmation link');
-      setUser(u);
+  const signOut = async () => {
+    try {
+      setLoading(true);
+      await getAuthClient().signOut();
       onIdentityChanged?.();
+    } catch (error) {
+      Alert.alert('Sign out failed', error instanceof Error ? error.message : 'Unable to sign out.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
-    const result = await processSyncQueue();
-    const templates = await syncTemplatesToCloud();
-    Alert.alert(
-      'Sync Complete',
-      `Sessions: ${result.synced} synced, ${result.failed} failed\nTemplates: ${templates} synced`
-    );
-    setSyncing(false);
-  };
-
-  const handleSignOut = async () => {
-    await signOut();
-    setUser(null);
-    onIdentityChanged?.();
-  };
-
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: spacing['4xl'] }}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={typography.h2}>Settings</Text>
-        {onClose && (
-          <TouchableOpacity onPress={onClose}>
-            <Text style={{ color: colors.textSecondary, fontSize: 16 }}>Done</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Sync Status */}
-      <Card style={{ margin: spacing.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View>
-            <Text style={typography.body}>Cloud Sync</Text>
-            <Text style={[typography.caption, { marginTop: 2 }]}>
-              {user ? `Signed in as ${user.email}` : configured ? 'Not signed in' : 'Not configured'}
-            </Text>
-          </View>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: user ? colors.primary : colors.textMuted }} />
+  return <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Text style={typography.h1}>GymFlow</Text>
+    {developmentAccountsAllowed ? <>
+      <Text style={[typography.body, styles.intro]}>Development Test Account</Text>
+      <Card>
+        <Text style={typography.caption}>Only development and test builds can create these accounts. They are not available in preview or production.</Text>
+        <Input label="Display name" value={displayName} onChangeText={setDisplayName} placeholder="GymFlow Test User" />
+        <Input label="Test email" value={email} onChangeText={setEmail} placeholder="test-a@gymflow.local" keyboardType="email-address" />
+        <Input label="Password" value={password} onChangeText={setPassword} placeholder="At least 8 characters" />
+        <View style={styles.actions}>
+          <Button title="Sign In Test Account" onPress={() => void submit('sign-in')} loading={loading} />
+          <Button title="Create Test Account" onPress={() => void submit('sign-up')} loading={loading} variant="secondary" />
+          <Button title="Sign Out" onPress={() => void signOut()} loading={loading} variant="ghost" />
         </View>
       </Card>
-
-      {/* Supabase Config */}
-      <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.xl }}>
-        <Text style={[typography.label, { marginBottom: spacing.md }]}>Supabase Configuration</Text>
-        <Input
-          label="Supabase URL"
-          value={supabaseUrl}
-          onChangeText={setSupabaseUrl}
-          placeholder="https://your-project.supabase.co"
-        />
-        <Input
-          label="Anon Key"
-          value={supabaseAnonKey}
-          onChangeText={setSupabaseAnonKey}
-          placeholder="your-anon-key"
-        />
-        <Button
-          title="Save Configuration"
-          onPress={handleConfigure}
-          loading={loading}
-          disabled={!supabaseUrl.trim() || !supabaseAnonKey.trim()}
-        />
-      </View>
-
-      <Divider style={{ marginHorizontal: spacing.lg }} />
-
-      {/* Auth */}
-      {configured && !user && (
-        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.xl }}>
-          <Text style={[typography.label, { marginBottom: spacing.md }]}>
-            {mode === 'signup' ? 'Create Account' : 'Sign In'}
-          </Text>
-          <Input
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="your@email.com"
-            keyboardType="email-address"
-          />
-          <Input
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="password"
-          />
-          {mode === 'login' ? (
-            <>
-              <Button title="Sign In" onPress={handleLogin} loading={loading} />
-              <TouchableOpacity
-                onPress={() => setMode('signup')}
-                style={{ alignItems: 'center', marginTop: spacing.md }}
-              >
-                <Text style={{ color: colors.textSecondary, fontSize: 14 }}>
-                  Don't have an account? <Text style={{ color: colors.primary }}>Sign Up</Text>
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <Button title="Create Account" onPress={handleSignUp} loading={loading} />
-              <TouchableOpacity
-                onPress={() => setMode('login')}
-                style={{ alignItems: 'center', marginTop: spacing.md }}
-              >
-                <Text style={{ color: colors.textSecondary, fontSize: 14 }}>
-                  Already have an account? <Text style={{ color: colors.primary }}>Sign In</Text>
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      )}
-
-      {/* Sync Actions */}
-      {configured && user && (
-        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.xl }}>
-          <Text style={[typography.label, { marginBottom: spacing.md }]}>Sync</Text>
-          <Button
-            title="Sync Now"
-            onPress={handleSync}
-            loading={syncing}
-            variant="secondary"
-            style={{ marginBottom: spacing.md }}
-          />
-          <Button
-            title="Sign Out"
-            onPress={handleSignOut}
-            variant="ghost"
-          />
-        </View>
-      )}
-
-      {/* App Info */}
-      <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing['4xl'] }}>
-        <Divider />
-        <View style={{ alignItems: 'center', marginTop: spacing.lg }}>
-          <Text style={[typography.caption, { fontSize: 16, marginBottom: spacing.xs }]}>🏋️</Text>
-          <Text style={typography.caption}>GymFlow v1.0.0</Text>
-          <Text style={[typography.caption, { marginTop: 4 }]}>Offline-First Workout Tracker</Text>
-        </View>
-      </View>
-    </ScrollView>
-  );
+    </> : <Card>
+      <Text style={typography.h2}>Sign in is not available</Text>
+      <Text style={[typography.body, styles.intro]}>This build requires verified phone authentication, which has not been enabled yet.</Text>
+    </Card>}
+  </ScrollView>;
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: spacing.lg, paddingTop: spacing['4xl'], gap: spacing.lg },
+  intro: { color: colors.textSecondary, marginTop: spacing.sm },
+  actions: { gap: spacing.md, marginTop: spacing.lg },
 });
