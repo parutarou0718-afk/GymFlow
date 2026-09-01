@@ -28,7 +28,13 @@ BETTER_AUTH_SECRET=<long random secret>
 
 `DATABASE_URL`, `BETTER_AUTH_SECRET`, and any production credentials stay only in server-side secret management. The server expects a PostgreSQL database; it neither provisions a database nor stores GymFlow training-domain data in PostgreSQL. Better Auth owns only its authentication tables.
 
-Run the server with `npm --prefix server run dev`. Apply Better Auth's generated PostgreSQL schema/migrations in that server environment before starting it. This repository deliberately does not generate or apply a database migration because no PostgreSQL instance is provisioned here.
+Run the server with `npm --prefix server run dev`. Before the first start against a PostgreSQL database, copy `server/.env.example` to the untracked `server/.env`, set the configuration above, then run:
+
+```text
+npm --prefix server run auth:migrate
+```
+
+The command loads `server/.env` through the CLI-only [`server/src/auth-cli.ts`](../server/src/auth-cli.ts) entrypoint and presents Better Auth's database migration flow. It reuses the same `createAuth()` and server configuration as runtime; it does not provision PostgreSQL or commit environment values.
 
 For an Android emulator, the app must use an emulator-reachable host such as `http://10.0.2.2:3001` for `EXPO_PUBLIC_AUTH_BASE_URL`; a physical device must use a reachable HTTPS/LAN endpoint. Do not use a host loopback address from the device.
 
