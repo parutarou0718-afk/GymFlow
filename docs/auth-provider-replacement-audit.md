@@ -1,6 +1,6 @@
 # Auth Provider Replacement Audit
 
-**Scope:** audit only. This document does not install Better Auth, remove Supabase, alter runtime authentication, provision PostgreSQL, or change M22.3 acceptance.
+**Status:** superseded as an audit-only document by Auth.1 + Auth.2 implementation. See [development authentication test accounts](auth-development-test-accounts.md) for the active development setup. Better Auth is now the runtime authentication boundary; Supabase snapshot/template sync remains dormant legacy infrastructure and is not a Better Auth responsibility.
 
 **Starting baseline:** `1ea06e669e5025275bcee0af8d8c2482ad470308`
 
@@ -19,7 +19,7 @@
 | `tests/m22-production-identity.test.ts` | Uses synthetic principals marked `provider: 'supabase'` | Test coupling | Retarget to provider-neutral fixtures and add Better Auth adapter/lifecycle tests. |
 | `tests/m22-native-beta-build.test.ts`, `eas.json`, M22.3 documentation | Checks/requires `EXPO_PUBLIC_SUPABASE_*` | Build/documentation coupling | Replace with one public Better Auth API base URL configuration and update the native acceptance procedure after the runtime migration. |
 
-`@supabase/supabase-js@2.109.0` is the only installed production auth SDK. Better Auth, `@better-auth/expo`, and `expo-network` are not installed. `expo-secure-store`, `expo-linking`, `expo-web-browser`, and `expo-constants` are already present.
+`better-auth@1.7.2`, `@better-auth/expo@1.7.2`, and `expo-network@8.0.8` are installed for the implemented auth foundation. `@supabase/supabase-js@2.109.0` remains only because legacy sync has not been deleted or replaced.
 
 ### Dependency conclusion
 
