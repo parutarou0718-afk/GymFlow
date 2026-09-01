@@ -22,9 +22,10 @@ import { createProgramService } from '../../src/modules/program';
 import { createGymService, type Gym } from '../../src/modules/gym';
 import { createGymContextService } from '../../src/modules/gym-context';
 import { createUserGymService, type UserGymRelationship } from '../../src/modules/user-gym';
-import { DEFAULT_LOCAL_USER_ID } from '../../src/modules/user';
+import { useCurrentUser } from '../../src/modules/current-user';
 
 export default function HomeScreen() {
+  const { user } = useCurrentUser();
   const router = useRouter();
   const store = useStores();
   const workoutApi = useMemo(() => createWorkoutService(store), [store]);
@@ -44,14 +45,14 @@ export default function HomeScreen() {
 
   const loadData = useCallback(async () => {
     const [active, templs, workoutStats, currentGymId, home, recent] = await Promise.all([
-      workoutApi.getActiveWorkouts(),
-      programApi.listPrograms(),
-      workoutApi.getWorkoutStats(),
-      contextApi.getCurrentGym(DEFAULT_LOCAL_USER_ID),
-      userGymApi.getHomeGym(DEFAULT_LOCAL_USER_ID),
-      userGymApi.getRecentGyms(DEFAULT_LOCAL_USER_ID, { limit: 2 }),
+      user ? workoutApi.getActiveWorkoutsForOwner(user.id) : Promise.resolve([]),
+      user ? programApi.listProgramsForOwner(user.id) : Promise.resolve([]),
+      user ? workoutApi.getWorkoutStatsForOwner(user.id) : Promise.resolve({ workouts: 0, volume: 0 }),
+      user ? contextApi.getCurrentGym(user.id) : Promise.resolve(null),
+      user ? userGymApi.getHomeGym(user.id) : Promise.resolve(null),
+      user ? userGymApi.getRecentGyms(user.id, { limit: 2 }) : Promise.resolve([]),
     ]);
-    const activeSession = active[0] ?? null;
+    const activeSession = active.find(session => session.status === 'active' || session.status === 'paused') ?? null;
     setActiveSession(activeSession);
     setRecentTemplates(templs.slice(0, 5));
     setStats(workoutStats);
@@ -64,7 +65,7 @@ export default function HomeScreen() {
     setCurrentGymUnavailable(Boolean(currentGymId && !availableCurrentGym));
     setActiveGymName(resolvedActiveGym?.name ?? null);
     setHomeGym(home); setRecentGyms(recent);
-  }, [contextApi, gymApi, programApi, userGymApi, workoutApi]);
+  }, [contextApi, gymApi, programApi, user, userGymApi, workoutApi]);
 
   useFocusEffect(
     useCallback(() => {
@@ -91,7 +92,7 @@ export default function HomeScreen() {
       router.push({ pathname: '/active-workout' as any, params: { sessionId: activeSession.id } });
     }
   };
-  const setCurrent = async (gymId: string) => { await contextApi.setCurrentGym(DEFAULT_LOCAL_USER_ID, gymId); await loadData(); };
+  const setCurrent = async (gymId: string) => { if (!user) return; await contextApi.setCurrentGym(user.id, gymId); await loadData(); };
 
   return (
     <ScrollView

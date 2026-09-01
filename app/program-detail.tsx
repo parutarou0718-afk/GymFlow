@@ -7,7 +7,8 @@ import { createGymContextService } from '../src/modules/gym-context';
 import { createGymService, type Gym } from '../src/modules/gym';
 import { createMatchingService } from '../src/modules/matching';
 import { createProgramMatchingService, type ProgramGymMatchResult } from '../src/modules/program-matching';
-import { DEFAULT_LOCAL_USER_ID, createUserService } from '../src/modules/user';
+import { createUserService } from '../src/modules/user';
+import { useCurrentUser } from '../src/modules/current-user';
 import { createInventoryService } from '../src/modules/gym-inventory';
 import { createProgramAdaptationService } from '../src/modules/program-adaptation';
 import { createWorkoutService } from '../src/modules/workout';
@@ -16,6 +17,7 @@ import { Button, Card } from '../src/components/ui';
 import { colors, spacing, typography } from '../src/lib/theme';
 
 export default function ProgramDetailScreen() {
+  const { user } = useCurrentUser();
   const { programId } = useLocalSearchParams<{ programId: string }>();
   const store = useStores();
   const programs = useMemo(() => createProgramService(store), [store]);
@@ -40,8 +42,8 @@ export default function ProgramDetailScreen() {
   const load = useCallback(async () => {
     if (!programId) return;
     const [nextProgram, currentGymId] = await Promise.all([
-      programs.getProgram(programId),
-      contexts.getCurrentGym(DEFAULT_LOCAL_USER_ID),
+      user ? programs.getProgramForOwner(user.id, programId) : Promise.resolve(null),
+      user ? contexts.getCurrentGym(user.id) : Promise.resolve(null),
     ]);
     const selectedGym = currentGymId ? await gyms.getGym(currentGymId) : null;
     const availableGym = selectedGym?.status === 'active' ? selectedGym : null;
@@ -50,16 +52,16 @@ export default function ProgramDetailScreen() {
     setCurrentGymUnavailable(Boolean(currentGymId && !availableGym));
     setMatch(null);
     setError('');
-  }, [contexts, gyms, programId, programs]);
+  }, [contexts, gyms, programId, programs, user]);
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const matchAtCurrentGym = async () => {
-    if (!program || !currentGym) return;
+    if (!program || !currentGym || !user) return;
     try {
       setError('');
       setMatch(await flow.matchProgramForCurrentGym({
-        userId: DEFAULT_LOCAL_USER_ID,
+        userId: user.id,
         programId: program.id,
         expectedGymId: currentGym.id,
       }));
@@ -69,11 +71,11 @@ export default function ProgramDetailScreen() {
   };
 
   const startAtCurrentGym = async () => {
-    if (!program || !currentGym) return;
+    if (!program || !currentGym || !user) return;
     try {
       setError('');
       const session = await flow.startProgramWorkoutAtCurrentGym({
-        userId: DEFAULT_LOCAL_USER_ID,
+        userId: user.id,
         programId: program.id,
         expectedGymId: currentGym.id,
       });

@@ -4,11 +4,13 @@
 
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, Text } from "react-native";
 import { colors } from "../src/lib/theme";
 import { useEffect } from "react";
 import { StoreProvider } from "../src/db/stores";
 import { bootstrapStorage } from "../src/db/storage-bootstrap";
+import { CurrentUserProvider, useCurrentUser } from '../src/modules/current-user';
+import { AuthSettings } from '../src/components/auth/Settings';
 
 export default function RootLayout() {
   useEffect(() => {
@@ -17,7 +19,18 @@ export default function RootLayout() {
 
   return (
     <StoreProvider>
-      <View style={styles.container}>
+      <CurrentUserProvider><IdentityGate /></CurrentUserProvider>
+    </StoreProvider>
+  );
+}
+
+function IdentityGate() {
+  const identity = useCurrentUser();
+  if (identity.status === 'loading') return <View style={styles.container} />;
+  if (identity.status === 'logged-out') return <AuthSettings onIdentityChanged={() => void identity.refresh()} />;
+  if (identity.status === 'error') return <View style={styles.container}><Text style={{ color: colors.text }}>Unable to load your account. Please try again.</Text></View>;
+  return (
+    <View style={styles.container}>
         <StatusBar style="light" />
         <Stack
           screenOptions={{
@@ -56,7 +69,6 @@ export default function RootLayout() {
           />
         </Stack>
       </View>
-    </StoreProvider>
   );
 }
 

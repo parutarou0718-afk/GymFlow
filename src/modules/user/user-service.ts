@@ -1,7 +1,7 @@
 import { generateId } from '../../lib/utils';
 import type { UserStorePort } from './ports';
 import { createDefaultUser, DEFAULT_LOCAL_USER_ID } from './seed';
-import type { CreateUserInput, ExperienceLevel, TrainingGoal, UpdateUserInput, UserProfile, UserTrainingPreferences, UserPrivacySettings, UserVisibility } from './types';
+import type { AuthenticatedPrincipal, CreateUserInput, ExperienceLevel, TrainingGoal, UpdateUserInput, UserProfile, UserTrainingPreferences, UserPrivacySettings, UserVisibility } from './types';
 
 const experienceLevels: readonly ExperienceLevel[] = ['beginner', 'intermediate', 'advanced', 'unknown'];
 const trainingGoals: readonly TrainingGoal[] = ['strength', 'hypertrophy', 'general_fitness', 'conditioning', 'mobility'];
@@ -75,6 +75,7 @@ export interface UserService {
   createUser(input: CreateUserInput): Promise<UserProfile>;
   updateUser(userId: string, patch: UpdateUserInput): Promise<UserProfile>;
   archiveUser(userId: string): Promise<UserProfile>;
+  resolveAuthenticatedUser(principal: AuthenticatedPrincipal): Promise<UserProfile>;
 }
 
 export function createUserService(store: UserStorePort): UserService {
@@ -129,6 +130,19 @@ export function createUserService(store: UserStorePort): UserService {
       const next: UserProfile = { ...current, status: 'archived', updatedAt: nextUpdatedAt(current) };
       await store.users.update(next);
       return next;
+    },
+    async resolveAuthenticatedUser(principal) {
+      const subject = principal.subject.trim();
+      if (!subject) throw new Error('Authenticated principal subject is required');
+      const existing = await store.users.findByAuthIdentity(principal.provider, subject);
+      if (existing) {
+        if (existing.status !== 'active') throw new Error('Authenticated Domain User is inactive');
+        return existing;
+      }
+      const user = normalizeInput({ displayName: principal.displayName?.trim() || principal.email?.trim() || 'GymFlow User' }, generateId(), Date.now());
+      const mapped: UserProfile = { ...user, authProvider: principal.provider, authSubject: subject };
+      await store.users.create(mapped);
+      return mapped;
     },
   };
 }

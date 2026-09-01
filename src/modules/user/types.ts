@@ -4,6 +4,14 @@ export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced' | 'unknow
 export type TrainingGoal = 'strength' | 'hypertrophy' | 'general_fitness' | 'conditioning' | 'mobility';
 export type UserStatus = 'active' | 'archived';
 export type UserVisibility = 'private' | 'followers' | 'public';
+export type AuthProvider = 'supabase';
+
+export interface AuthenticatedPrincipal {
+  provider: AuthProvider;
+  subject: string;
+  email?: string | null;
+  displayName?: string | null;
+}
 
 export interface UserTrainingPreferences {
   preferredUnits: 'metric' | 'imperial';
@@ -21,6 +29,8 @@ export interface UserPrivacySettings {
 
 export interface UserProfile {
   id: string;
+  authProvider?: AuthProvider | null;
+  authSubject?: string | null;
   displayName: string;
   avatarUri?: string | null;
   experienceLevel: ExperienceLevel;

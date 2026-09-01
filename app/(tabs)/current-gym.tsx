@@ -5,11 +5,12 @@ import { useStores } from '../../src/db/stores';
 import { createGymService, type Gym } from '../../src/modules/gym';
 import { createGymContextService } from '../../src/modules/gym-context';
 import { createInventoryService } from '../../src/modules/gym-inventory';
-import { DEFAULT_LOCAL_USER_ID } from '../../src/modules/user';
+import { useCurrentUser } from '../../src/modules/current-user';
 import { Card, SectionHeader } from '../../src/components/ui';
 import { colors, spacing, typography } from '../../src/lib/theme';
 
 export default function CurrentGymScreen() {
+  const { user } = useCurrentUser();
   const store = useStores();
   const gymApi = useMemo(() => createGymService(store), [store]);
   const contextApi = useMemo(() => createGymContextService(store), [store]);
@@ -23,7 +24,7 @@ export default function CurrentGymScreen() {
   const refresh = useCallback(async () => {
     const [allGyms, currentGymId] = await Promise.all([
       gymApi.listGyms(),
-      contextApi.getCurrentGym(DEFAULT_LOCAL_USER_ID),
+      user ? contextApi.getCurrentGym(user.id) : Promise.resolve(null),
     ]);
     setGyms(allGyms.filter(item => item.status !== 'closed'));
     const selected = currentGymId ? await gymApi.getGym(currentGymId) : null;
@@ -31,14 +32,15 @@ export default function CurrentGymScreen() {
     setCurrentGym(available);
     setCurrentGymUnavailable(Boolean(currentGymId && !available));
     setInventoryCount(available ? (await inventoryApi.getGymEquipment(available.id)).length : 0);
-  }, [contextApi, gymApi, inventoryApi]);
+  }, [contextApi, gymApi, inventoryApi, user]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
 
   const selectGym = async (gym: Gym) => {
     try {
       setError('');
-      await contextApi.setCurrentGym(DEFAULT_LOCAL_USER_ID, gym.id);
+      if (!user) return;
+      await contextApi.setCurrentGym(user.id, gym.id);
       await refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to choose this training location');

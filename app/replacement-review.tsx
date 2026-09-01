@@ -11,7 +11,8 @@ import { createProgramAdaptationService } from '../src/modules/program-adaptatio
 import { createInventoryService } from '../src/modules/gym-inventory';
 import { createWorkoutService } from '../src/modules/workout';
 import { createTrainingFlowService } from '../src/modules/training-flow';
-import { createUserService, DEFAULT_LOCAL_USER_ID } from '../src/modules/user';
+import { createUserService } from '../src/modules/user';
+import { useCurrentUser } from '../src/modules/current-user';
 import { createExerciseService } from '../src/modules/exercise';
 import { createEquipmentService } from '../src/modules/equipment';
 import { createReplacementReviewService, type ReplacementReview } from '../src/modules/replacement-review';
@@ -22,6 +23,7 @@ import { colors, spacing, typography } from '../src/lib/theme';
 const emptyNames: ReplacementReviewNames = { gymName: 'This Gym', exercises: {}, equipment: {} };
 
 export default function ReplacementReviewScreen() {
+  const { user } = useCurrentUser();
   const { programId } = useLocalSearchParams<{ programId: string }>();
   const store = useStores();
   const programs = useMemo(() => createProgramService(store), [store]);
@@ -51,22 +53,23 @@ export default function ReplacementReviewScreen() {
     if (!programId) return;
     try {
       setError('');
-      const [program, gymId] = await Promise.all([programs.getProgram(programId), contexts.getCurrentGym(DEFAULT_LOCAL_USER_ID)]);
+      const [program, gymId] = await Promise.all([user ? programs.getProgramForOwner(user.id, programId) : Promise.resolve(null), user ? contexts.getCurrentGym(user.id) : Promise.resolve(null)]);
       if (!program || !gymId) throw new Error('Current Gym and Program are required');
-      const match = await flow.matchProgramForCurrentGym({ userId: DEFAULT_LOCAL_USER_ID, programId, expectedGymId: gymId });
+      if (!user) throw new Error('Current user is unavailable');
+      const match = await flow.matchProgramForCurrentGym({ userId: user.id, programId, expectedGymId: gymId });
       const nextReview = reviewApi.createReplacementReview({ matchResult: match, programUpdatedAt: program.updatedAt });
       setReview(nextReview);
       await resolveNames(nextReview);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to load replacement choices'); }
-  }, [contexts, equipmentApi, exerciseApi, flow, gyms, programId, programs, reviewApi]);
+  }, [contexts, equipmentApi, exerciseApi, flow, gyms, programId, programs, reviewApi, user]);
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const create = async () => {
-    if (!review) return;
+    if (!review || !user) return;
     try {
       setError('');
-      const program = await flow.createAdaptedProgramFromReview({ userId: DEFAULT_LOCAL_USER_ID, expectedGymId: review.gymId, review });
+      const program = await flow.createAdaptedProgramFromReview({ userId: user.id, expectedGymId: review.gymId, review });
       router.replace({ pathname: '/program-detail' as any, params: { programId: program.id } });
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to create adapted Program'); }
   };

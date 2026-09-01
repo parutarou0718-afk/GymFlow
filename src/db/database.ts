@@ -65,6 +65,8 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       training_goals_json TEXT NOT NULL,
       preferences_json TEXT NOT NULL,
       privacy_json TEXT NOT NULL,
+      auth_provider TEXT,
+      auth_subject TEXT,
       status TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -257,8 +259,8 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
 
   const defaultUser = createDefaultUser(Date.now());
   await database.runAsync(
-    'INSERT OR IGNORE INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [defaultUser.id, defaultUser.displayName, defaultUser.avatarUri ?? null, defaultUser.experienceLevel, JSON.stringify(defaultUser.trainingGoals), JSON.stringify(defaultUser.preferences), JSON.stringify(defaultUser.privacy), defaultUser.status, defaultUser.createdAt, defaultUser.updatedAt],
+    'INSERT OR IGNORE INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,auth_provider,auth_subject,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    [defaultUser.id, defaultUser.displayName, defaultUser.avatarUri ?? null, defaultUser.experienceLevel, JSON.stringify(defaultUser.trainingGoals), JSON.stringify(defaultUser.preferences), JSON.stringify(defaultUser.privacy), null, null, defaultUser.status, defaultUser.createdAt, defaultUser.updatedAt],
   );
   await database.runAsync("UPDATE sessions SET owner_user_id = 'local_default_user' WHERE owner_user_id IS NULL");
   await database.runAsync("UPDATE templates SET owner_user_id = 'local_default_user' WHERE owner_user_id IS NULL");
@@ -277,6 +279,8 @@ function mapUser(row: any): UserProfile {
     trainingGoals: JSON.parse(row.training_goals_json),
     preferences: JSON.parse(row.preferences_json),
     privacy: JSON.parse(row.privacy_json),
+    authProvider: row.auth_provider ?? null,
+    authSubject: row.auth_subject ?? null,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -285,13 +289,18 @@ function mapUser(row: any): UserProfile {
 
 export async function createUser(user: UserProfile): Promise<void> {
   await (await getDatabase()).runAsync(
-    'INSERT INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [user.id, user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.status, user.createdAt, user.updatedAt],
+    'INSERT INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,auth_provider,auth_subject,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    [user.id, user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.authProvider ?? null, user.authSubject ?? null, user.status, user.createdAt, user.updatedAt],
   );
 }
 
 export async function getUser(id: UUID): Promise<UserProfile | null> {
   const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM users WHERE id = ?', [id]);
+  return row ? mapUser(row) : null;
+}
+
+export async function findUserByAuthIdentity(provider: string, subject: string): Promise<UserProfile | null> {
+  const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM users WHERE auth_provider = ? AND auth_subject = ?', [provider, subject]);
   return row ? mapUser(row) : null;
 }
 
@@ -301,8 +310,8 @@ export async function listUsers(): Promise<UserProfile[]> {
 
 export async function updateUser(user: UserProfile): Promise<void> {
   await (await getDatabase()).runAsync(
-    'UPDATE users SET display_name=?,avatar_uri=?,experience_level=?,training_goals_json=?,preferences_json=?,privacy_json=?,status=?,updated_at=? WHERE id=?',
-    [user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.status, user.updatedAt, user.id],
+    'UPDATE users SET display_name=?,avatar_uri=?,experience_level=?,training_goals_json=?,preferences_json=?,privacy_json=?,auth_provider=?,auth_subject=?,status=?,updated_at=? WHERE id=?',
+    [user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.authProvider ?? null, user.authSubject ?? null, user.status, user.updatedAt, user.id],
   );
 }
 
@@ -929,7 +938,7 @@ export function createStore(): GymFlowStore {
       addRequirement: addEquipmentRequirement, getRequirement: getEquipmentRequirement, updateRequirement: updateEquipmentRequirement, removeRequirement: removeEquipmentRequirement, requirementsForGroup: getEquipmentRequirementsForGroup,
     },
     substitutions: { create: createExerciseSubstitution, get: getExerciseSubstitution, listForSource: listExerciseSubstitutionsForSource, listToTarget: listExerciseSubstitutionsToTarget, update: updateExerciseSubstitution },
-    users: { create: createUser, get: getUser, list: listUsers, update: updateUser },
+    users: { create: createUser, get: getUser, findByAuthIdentity: findUserByAuthIdentity, list: listUsers, update: updateUser },
     userGyms: { get: getUserGymRelationship, listByUser: listUserGymRelationships, upsert: upsertUserGymRelationship, delete: deleteUserGymRelationship, setHome: setUserGymHome, clearHome: clearUserGymHome },
     gymContexts: { get: getGymContext, set: setGymContext, clear: clearGymContext },
     social: {

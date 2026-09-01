@@ -25,6 +25,10 @@ export function createTrainingFlowService(dependencies: TrainingFlowDependencies
 
   const match = async (input: MatchProgramForCurrentGymInput) => {
     const gym = await resolveCurrentGym(input);
+    const owned = dependencies.programs.getProgramForOwner
+      ? await dependencies.programs.getProgramForOwner(input.userId, input.programId)
+      : await dependencies.programs.getProgram(input.programId);
+    if (!owned) throw new Error('PROGRAM_NOT_FOUND');
     return dependencies.programMatching.matchProgramToGym({ programId: input.programId, gymId: gym.id, includeAlternatives: true });
   };
 
@@ -43,17 +47,23 @@ export function createTrainingFlowService(dependencies: TrainingFlowDependencies
       const result = await match(input);
       if (result.status === 'requires_adaptation') throw new Error('PROGRAM_REQUIRES_ADAPTATION');
       if (result.status === 'not_executable') throw new Error('PROGRAM_NOT_EXECUTABLE');
-      return dependencies.workouts.startWorkoutFromTemplate({ templateId: input.programId, gymId: result.gymId });
+      return dependencies.workouts.startWorkoutFromTemplateForOwner
+        ? dependencies.workouts.startWorkoutFromTemplateForOwner(input.userId, { templateId: input.programId, gymId: result.gymId })
+        : dependencies.workouts.startWorkoutFromTemplate({ templateId: input.programId, gymId: result.gymId });
     },
     async startQuickWorkoutAtCurrentGym(input) {
       const gym = await resolveCurrentGym(input);
-      return dependencies.workouts.startQuickWorkout({ gymId: gym.id });
+      return dependencies.workouts.startQuickWorkoutForOwner
+        ? dependencies.workouts.startQuickWorkoutForOwner(input.userId, { gymId: gym.id })
+        : dependencies.workouts.startQuickWorkout({ gymId: gym.id });
     },
     async createAdaptedProgramFromReview(input) {
       const gym = await resolveCurrentGym(input);
       const review = input.review;
       if (review.gymId !== gym.id) throw new Error('CURRENT_GYM_CHANGED');
-      const program = await dependencies.programs.getProgram(review.programId);
+      const program = dependencies.programs.getProgramForOwner
+        ? await dependencies.programs.getProgramForOwner(input.userId, review.programId)
+        : await dependencies.programs.getProgram(review.programId);
       if (!program) throw new Error('PROGRAM_NOT_FOUND');
       if (program.updatedAt !== review.programUpdatedAt) throw new Error('PROGRAM_CHANGED');
       const currentMatch = await dependencies.programMatching.matchProgramToGym({ programId: program.id, gymId: gym.id, includeAlternatives: true });

@@ -13,10 +13,10 @@ export interface TrainingFlowDependencies {
   gymContexts: GymContextService;
   gyms: { getGym(gymId: string): Promise<Gym | null> };
   inventory: { getGymEquipment(gymId: string): Promise<GymEquipmentInventoryItem[]> };
-  programs: Pick<ProgramService, 'getProgram'>;
+  programs: Pick<ProgramService, 'getProgram'> & Partial<Pick<ProgramService, 'getProgramForOwner'>>;
   programMatching: ProgramMatchingService;
   programAdaptation: ProgramAdaptationService;
-  workouts: Pick<WorkoutService, 'startQuickWorkout' | 'startWorkoutFromTemplate'>;
+  workouts: Pick<WorkoutService, 'startQuickWorkout' | 'startWorkoutFromTemplate'> & Partial<Pick<WorkoutService, 'startQuickWorkoutForOwner' | 'startWorkoutFromTemplateForOwner'>>;
 }
 
 export interface CurrentGymTrainingState {

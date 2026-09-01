@@ -27,7 +27,7 @@ import {
 
 type AuthMode = 'login' | 'signup' | 'config';
 
-export function AuthSettings({ onClose }: { onClose?: () => void }) {
+export function AuthSettings({ onClose, onIdentityChanged }: { onClose?: () => void; onIdentityChanged?: () => void }) {
   const [configured, setConfigured] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [mode, setMode] = useState<AuthMode>('config');
@@ -75,6 +75,7 @@ export function AuthSettings({ onClose }: { onClose?: () => void }) {
       Alert.alert('Login Failed', error);
     } else {
       setUser(u);
+      onIdentityChanged?.();
     }
     setLoading(false);
   };
@@ -95,6 +96,7 @@ export function AuthSettings({ onClose }: { onClose?: () => void }) {
     } else {
       Alert.alert('Success', 'Check your email for confirmation link');
       setUser(u);
+      onIdentityChanged?.();
     }
     setLoading(false);
   };
@@ -113,6 +115,7 @@ export function AuthSettings({ onClose }: { onClose?: () => void }) {
   const handleSignOut = async () => {
     await signOut();
     setUser(null);
+    onIdentityChanged?.();
   };
 
   return (
