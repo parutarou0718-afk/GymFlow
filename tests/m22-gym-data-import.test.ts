@@ -5,7 +5,10 @@ import { createGymDataImportService, type GymImportData } from '../src/modules/g
 import { createGymService } from '../src/modules/gym';
 import { createExerciseService } from '../src/modules/exercise';
 import { createExerciseEquipmentService } from '../src/modules/exercise-equipment';
+import { createExerciseSubstitutionService } from '../src/modules/exercise-substitution';
 import { createMatchingService } from '../src/modules/matching';
+import { createProgramMatchingService } from '../src/modules/program-matching';
+import { createProgramService } from '../src/modules/program';
 
 const data: GymImportData = {
   schemaVersion: 1,
@@ -53,13 +56,27 @@ test('duplicate rows and conflicting Gym identities fail before mutation', async
   await assert.rejects(() => importer.plan({ ...data, gyms: [{ ...data.gyms[0], operatorGymKey: 'key-a', externalProvider: 'osm', externalPlaceId: 'x' }] }), /Conflicting Gym identities/);
 });
 
-test('imported inventory feeds the existing matching engine', async () => {
+test('imported inventory drives existing Program Matching outcomes without changing matching rules', async () => {
   const store = createWebStore(); const importer = createGymDataImportService(store);
   const input: GymImportData = { ...data, gyms: [data.gyms[0], { operatorGymKey: 'sample-osaka-002', name: 'No rack Gym', status: 'active', inventory: [{ equipmentId: 'web-equipment-6', quantity: 1, status: 'available', verified: true }] }] };
   await importer.apply(await importer.plan(input));
-  const exercise = await createExerciseService(store).createExercise({ name: 'Imported inventory exercise', aliases: [], category: 'compound', movementPattern: 'squat', primaryMuscles: ['legs'], secondaryMuscles: [] });
-  const requirements = createExerciseEquipmentService(store); const group = await requirements.createRequirementGroup(exercise.id, {}); await requirements.addEquipmentRequirement(group.id, { equipmentId: 'web-equipment-7', level: 'required' });
+  const exercises = createExerciseService(store);
+  const [exercise, substitute] = await Promise.all([
+    exercises.createExercise({ name: 'Imported inventory exercise', aliases: [], category: 'compound', movementPattern: 'squat', primaryMuscles: ['quads'], secondaryMuscles: [] }),
+    exercises.createExercise({ name: 'Imported equipment substitute', aliases: [], category: 'compound', movementPattern: 'squat', primaryMuscles: ['quads'], secondaryMuscles: [] }),
+  ]);
+  const requirements = createExerciseEquipmentService(store);
+  const [sourceGroup, substituteGroup] = await Promise.all([
+    requirements.createRequirementGroup(exercise.id, {}),
+    requirements.createRequirementGroup(substitute.id, {}),
+  ]);
+  await requirements.addEquipmentRequirement(sourceGroup.id, { equipmentId: 'web-equipment-7', level: 'required' });
+  await requirements.addEquipmentRequirement(substituteGroup.id, { equipmentId: 'web-equipment-6', level: 'required' });
+  await createExerciseSubstitutionService(store).createSubstitution({ sourceExerciseId: exercise.id, targetExerciseId: substitute.id, quality: 'good' });
+  const programs = createProgramService(store);
+  const program = await programs.createProgram({ name: 'Imported Gym matching Program', description: '', exercises: [{ id: 'imported-entry', exerciseId: exercise.id, order: 0, targetSets: [] }] });
   const gyms = await store.gyms.list(); const matching = createMatchingService(store);
-  assert.equal((await matching.matchExerciseToGym({ exerciseId: exercise.id, gymId: gyms.find(gym => gym.operatorGymKey === 'sample-osaka-001')!.id, includeAlternatives: false })).status, 'executable');
-  assert.equal((await matching.matchExerciseToGym({ exerciseId: exercise.id, gymId: gyms.find(gym => gym.operatorGymKey === 'sample-osaka-002')!.id, includeAlternatives: false })).status, 'not_executable');
+  const programMatching = createProgramMatchingService({ programs, matching });
+  assert.equal((await programMatching.matchProgramToGym({ programId: program.id, gymId: gyms.find(gym => gym.operatorGymKey === 'sample-osaka-001')!.id })).status, 'fully_executable');
+  assert.equal((await programMatching.matchProgramToGym({ programId: program.id, gymId: gyms.find(gym => gym.operatorGymKey === 'sample-osaka-002')!.id })).status, 'requires_adaptation');
 });
