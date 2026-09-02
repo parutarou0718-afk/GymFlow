@@ -13,6 +13,7 @@ import {
   Modal,
   Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing, radius, typography } from "../../lib/theme";
 import { useWorkoutEngine } from "../../hooks/useWorkoutEngine";
 import { ExerciseBlock } from "./ExerciseBlock";
@@ -186,7 +187,16 @@ export function ActiveWorkout({
               onPress={() => {
                 const action = confirmation;
                 setConfirmation(null);
-                if (action === "finish") void engine.handleFinish();
+                if (action === "finish") {
+                  void engine.handleFinish().catch((error) => {
+                    Alert.alert(
+                      "Unable to finish workout",
+                      error instanceof Error
+                        ? `${error.message}\n\nTry again.`
+                        : "The workout could not be finished. Try again.",
+                    );
+                  });
+                }
                 else void engine.handleDiscard();
               }}
             >
@@ -351,7 +361,7 @@ export function ActiveWorkout({
 
   return (
     <>
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         {/* Header */}
         <View style={styles.header}>
           <View>
@@ -473,7 +483,7 @@ export function ActiveWorkout({
             </TouchableOpacity>
           }
         />
-      </View>
+      </SafeAreaView>
       {confirmationDialog}
       {replacementDialog}
     </>
