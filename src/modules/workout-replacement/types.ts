@@ -32,4 +32,6 @@ export interface ReplaceWorkoutExerciseSelection extends GetWorkoutReplacementOp
 export interface WorkoutReplacementService {
   getWorkoutReplacementOptions(input: GetWorkoutReplacementOptionsInput): Promise<WorkoutReplacementOptions>;
   replaceExercise(input: ReplaceWorkoutExerciseSelection): Promise<WorkoutSession>;
+  getWorkoutReplacementOptionsForOwner(userId: string, input: GetWorkoutReplacementOptionsInput): Promise<WorkoutReplacementOptions>;
+  replaceExerciseForOwner(userId: string, input: ReplaceWorkoutExerciseSelection): Promise<WorkoutSession>;
 }

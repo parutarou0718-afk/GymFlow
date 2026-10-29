@@ -109,7 +109,7 @@ export interface SocialStore {
   createSavedPost(item: SavedPost): Promise<void>; deleteSavedPost(userId: string, postId: string): Promise<void>; listSavedPosts(userId: string): Promise<SavedPost[]>;
 }
 
-export interface UserStore { create(user: UserProfile): Promise<void>; get(id: UUID): Promise<UserProfile | null>; list(): Promise<UserProfile[]>; update(user: UserProfile): Promise<void>; }
+export interface UserStore { create(user: UserProfile): Promise<void>; get(id: UUID): Promise<UserProfile | null>; findByAuthIdentity(provider: string, subject: string): Promise<UserProfile | null>; list(): Promise<UserProfile[]>; update(user: UserProfile): Promise<void>; }
 export interface UserGymStore { get(userId: UUID, gymId: UUID): Promise<UserGymRelationship | null>; listByUser(userId: UUID): Promise<UserGymRelationship[]>; upsert(item: UserGymRelationship): Promise<void>; delete(userId: UUID, gymId: UUID): Promise<void>; setHome(item: UserGymRelationship): Promise<void>; clearHome(userId: UUID): Promise<void>; }
 export interface GymContextStore { get(userId: UUID): Promise<GymContext | null>; set(context: GymContext): Promise<void>; clear(userId: UUID, updatedAt: number): Promise<void>; }
 

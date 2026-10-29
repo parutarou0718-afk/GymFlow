@@ -7,10 +7,12 @@ import { createUserService, type UserProfile } from '../../src/modules/user';
 import { createUserGymService, type MembershipStatus, type UserGymRelationship } from '../../src/modules/user-gym';
 import { Button, Card, Input, SectionHeader } from '../../src/components/ui';
 import { colors, spacing, typography } from '../../src/lib/theme';
+import { useCurrentUser } from '../../src/modules/current-user';
 
 const statuses: MembershipStatus[] = ['active', 'inactive', 'unknown'];
 
 export default function UserGymsScreen() {
+  const identity = useCurrentUser();
   const store = useStores();
   const users = useMemo(() => createUserService(store), [store]);
   const gymsApi = useMemo(() => createGymService(store), [store]);
@@ -26,11 +28,12 @@ export default function UserGymsScreen() {
   const [message, setMessage] = useState('');
 
   const reload = useCallback(async () => {
-    const current = await users.getCurrentUser();
+    const current = identity.user;
+    if (!current) return;
     const [nextGyms, nextItems, nextRecent] = await Promise.all([gymsApi.listGyms(), relationships.listUserGyms(current.id), relationships.getRecentGyms(current.id)]);
     setUser(current); setGyms(nextGyms); setItems(nextItems); setRecent(nextRecent);
     if (!selectedGymId && nextGyms[0]) setSelectedGymId(nextGyms[0].id);
-  }, [gymsApi, relationships, selectedGymId, users]);
+  }, [gymsApi, identity.user, relationships, selectedGymId]);
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));
   const selected = gyms.find(item => item.id === selectedGymId);
   const relation = items.find(item => item.gymId === selectedGymId);

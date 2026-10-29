@@ -8,8 +8,10 @@ import { createSocialService } from '../src/modules/social';
 import { createUserService } from '../src/modules/user';
 import { Button, Card, SectionHeader } from '../src/components/ui';
 import { colors, spacing, typography } from '../src/lib/theme';
+import { useCurrentUser } from '../src/modules/current-user';
 
 export default function SharedProgramScreen() {
+  const identity = useCurrentUser();
   const { programId } = useLocalSearchParams<{ programId: string }>();
   const store = useStores();
   const users = useMemo(() => createUserService(store), [store]);
@@ -24,7 +26,8 @@ export default function SharedProgramScreen() {
   const load = useCallback(async () => {
     if (!programId) return;
     try {
-      const viewer = await users.getCurrentUser();
+      const viewer = identity.user;
+      if (!viewer) return;
       setViewerId(viewer.id);
       setView(await sharing.getSharedProgramView({ viewerUserId: viewer.id, programId }));
       setMessage('');
@@ -32,7 +35,7 @@ export default function SharedProgramScreen() {
       setView(null);
       setMessage('This shared Program is no longer available.');
     }
-  }, [programId, sharing, users]);
+  }, [identity.user, programId, sharing]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const copy = async () => {

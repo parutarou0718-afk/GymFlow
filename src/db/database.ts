@@ -65,6 +65,8 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
       training_goals_json TEXT NOT NULL,
       preferences_json TEXT NOT NULL,
       privacy_json TEXT NOT NULL,
+      auth_provider TEXT,
+      auth_subject TEXT,
       status TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -257,8 +259,8 @@ async function initializeDatabase(database: SQLite.SQLiteDatabase): Promise<void
 
   const defaultUser = createDefaultUser(Date.now());
   await database.runAsync(
-    'INSERT OR IGNORE INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [defaultUser.id, defaultUser.displayName, defaultUser.avatarUri ?? null, defaultUser.experienceLevel, JSON.stringify(defaultUser.trainingGoals), JSON.stringify(defaultUser.preferences), JSON.stringify(defaultUser.privacy), defaultUser.status, defaultUser.createdAt, defaultUser.updatedAt],
+    'INSERT OR IGNORE INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,auth_provider,auth_subject,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    [defaultUser.id, defaultUser.displayName, defaultUser.avatarUri ?? null, defaultUser.experienceLevel, JSON.stringify(defaultUser.trainingGoals), JSON.stringify(defaultUser.preferences), JSON.stringify(defaultUser.privacy), null, null, defaultUser.status, defaultUser.createdAt, defaultUser.updatedAt],
   );
   await database.runAsync("UPDATE sessions SET owner_user_id = 'local_default_user' WHERE owner_user_id IS NULL");
   await database.runAsync("UPDATE templates SET owner_user_id = 'local_default_user' WHERE owner_user_id IS NULL");
@@ -277,6 +279,8 @@ function mapUser(row: any): UserProfile {
     trainingGoals: JSON.parse(row.training_goals_json),
     preferences: JSON.parse(row.preferences_json),
     privacy: JSON.parse(row.privacy_json),
+    authProvider: row.auth_provider ?? null,
+    authSubject: row.auth_subject ?? null,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -285,13 +289,18 @@ function mapUser(row: any): UserProfile {
 
 export async function createUser(user: UserProfile): Promise<void> {
   await (await getDatabase()).runAsync(
-    'INSERT INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [user.id, user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.status, user.createdAt, user.updatedAt],
+    'INSERT INTO users (id,display_name,avatar_uri,experience_level,training_goals_json,preferences_json,privacy_json,auth_provider,auth_subject,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    [user.id, user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.authProvider ?? null, user.authSubject ?? null, user.status, user.createdAt, user.updatedAt],
   );
 }
 
 export async function getUser(id: UUID): Promise<UserProfile | null> {
   const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM users WHERE id = ?', [id]);
+  return row ? mapUser(row) : null;
+}
+
+export async function findUserByAuthIdentity(provider: string, subject: string): Promise<UserProfile | null> {
+  const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM users WHERE auth_provider = ? AND auth_subject = ?', [provider, subject]);
   return row ? mapUser(row) : null;
 }
 
@@ -301,8 +310,8 @@ export async function listUsers(): Promise<UserProfile[]> {
 
 export async function updateUser(user: UserProfile): Promise<void> {
   await (await getDatabase()).runAsync(
-    'UPDATE users SET display_name=?,avatar_uri=?,experience_level=?,training_goals_json=?,preferences_json=?,privacy_json=?,status=?,updated_at=? WHERE id=?',
-    [user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.status, user.updatedAt, user.id],
+    'UPDATE users SET display_name=?,avatar_uri=?,experience_level=?,training_goals_json=?,preferences_json=?,privacy_json=?,auth_provider=?,auth_subject=?,status=?,updated_at=? WHERE id=?',
+    [user.displayName, user.avatarUri ?? null, user.experienceLevel, JSON.stringify(user.trainingGoals), JSON.stringify(user.preferences), JSON.stringify(user.privacy), user.authProvider ?? null, user.authSubject ?? null, user.status, user.updatedAt, user.id],
   );
 }
 
@@ -782,7 +791,7 @@ export async function getDomainEventsForSession(sessionId: UUID): Promise<Workou
   }));
 }
 
-function mapGym(row: any): Gym { return { id: row.id, name: row.name, branchName: row.branch_name, address: row.address, latitude: row.latitude, longitude: row.longitude, externalProvider: row.external_provider, externalPlaceId: row.external_place_id, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
+function mapGym(row: any): Gym { return { id: row.id, name: row.name, branchName: row.branch_name, address: row.address, latitude: row.latitude, longitude: row.longitude, externalProvider: row.external_provider, externalPlaceId: row.external_place_id, operatorGymKey: row.operator_gym_key ?? null, sourceName: row.source_name ?? null, sourceRef: row.source_ref ?? null, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapEquipment(row: any): Equipment { return { id: row.id, name: row.name, category: row.category, description: row.description, aliases: JSON.parse(row.aliases_json || '[]'), archived: row.archived === 1, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapInventory(row: any): GymEquipmentInventoryItem { return { id: row.id, gymId: row.gym_id, equipmentId: row.equipment_id, quantity: row.quantity, area: row.area, notes: row.notes, status: row.status, verified: row.verified === 1, verifiedAt: row.verified_at, capabilities: row.capabilities_json ? JSON.parse(row.capabilities_json) : null, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapExercise(row: any): ExerciseMaster { return { id: row.id, name: row.name, aliases: JSON.parse(row.aliases_json || '[]'), category: row.category, movementPattern: row.movement_pattern, primaryMuscles: JSON.parse(row.primary_muscles_json), secondaryMuscles: JSON.parse(row.secondary_muscles_json), description: row.description, notes: row.notes, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at }; }
@@ -790,11 +799,11 @@ function mapMovementFamily(row: any): MovementFamily { return { id: row.id, name
 function mapRequirementGroup(row: any): RequirementGroup { return { id: row.id, exerciseId: row.exercise_id, name: row.name, priority: row.priority, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function mapEquipmentRequirement(row: any): EquipmentRequirement { return { id: row.id, requirementGroupId: row.requirement_group_id, equipmentId: row.equipment_id, level: row.requirement_level, notes: row.notes, createdAt: row.created_at, updatedAt: row.updated_at }; }
 
-export async function createGym(gym: Gym): Promise<void> { const database = await getDatabase(); await database.runAsync('INSERT INTO gyms (id,name,branch_name,address,latitude,longitude,external_provider,external_place_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [gym.id,gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.status,gym.createdAt,gym.updatedAt]); }
+export async function createGym(gym: Gym): Promise<void> { const database = await getDatabase(); await database.runAsync('INSERT INTO gyms (id,name,branch_name,address,latitude,longitude,external_provider,external_place_id,operator_gym_key,source_name,source_ref,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [gym.id,gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.operatorGymKey ?? null,gym.sourceName ?? null,gym.sourceRef ?? null,gym.status,gym.createdAt,gym.updatedAt]); }
 export async function getGym(id: UUID): Promise<Gym | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gyms WHERE id = ?', [id]); return row ? mapGym(row) : null; }
 export async function listGyms(): Promise<Gym[]> { return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM gyms ORDER BY name')).map(mapGym); }
 export async function searchGyms(query: string): Promise<Gym[]> { const like = `%${query.trim()}%`; return (await (await getDatabase()).getAllAsync<any>('SELECT * FROM gyms WHERE name LIKE ? OR branch_name LIKE ? OR address LIKE ? ORDER BY name', [like, like, like])).map(mapGym); }
-export async function updateGym(gym: Gym): Promise<void> { const database = await getDatabase(); await database.runAsync('UPDATE gyms SET name=?,branch_name=?,address=?,latitude=?,longitude=?,external_provider=?,external_place_id=?,status=?,updated_at=? WHERE id=?', [gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.status,gym.updatedAt,gym.id]); }
+export async function updateGym(gym: Gym): Promise<void> { const database = await getDatabase(); await database.runAsync('UPDATE gyms SET name=?,branch_name=?,address=?,latitude=?,longitude=?,external_provider=?,external_place_id=?,operator_gym_key=?,source_name=?,source_ref=?,status=?,updated_at=? WHERE id=?', [gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.operatorGymKey ?? null,gym.sourceName ?? null,gym.sourceRef ?? null,gym.status,gym.updatedAt,gym.id]); }
 export async function getGymExternalLink(provider: string, externalPlaceId: string): Promise<ExternalGymLink | null> { const row = await (await getDatabase()).getFirstAsync<any>('SELECT * FROM gym_external_links WHERE provider=? AND external_place_id=?', [provider, externalPlaceId]); return row ? { id: row.id, gymId: row.gym_id, provider: row.provider, externalPlaceId: row.external_place_id, createdAt: row.created_at } : null; }
 export async function createGymExternalLink(link: ExternalGymLink): Promise<void> { await (await getDatabase()).runAsync('INSERT INTO gym_external_links (id,gym_id,provider,external_place_id,created_at) VALUES (?,?,?,?,?)', [link.id, link.gymId, link.provider, link.externalPlaceId, link.createdAt]); }
 export async function importGymWithExternalLink(gym: Gym, link: ExternalGymLink): Promise<void> { const database = await getDatabase(); await database.withExclusiveTransactionAsync(async tx => { await tx.runAsync('INSERT INTO gyms (id,name,branch_name,address,latitude,longitude,external_provider,external_place_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [gym.id,gym.name,gym.branchName ?? null,gym.address ?? null,gym.latitude ?? null,gym.longitude ?? null,gym.externalProvider ?? null,gym.externalPlaceId ?? null,gym.status,gym.createdAt,gym.updatedAt]); await tx.runAsync('INSERT INTO gym_external_links (id,gym_id,provider,external_place_id,created_at) VALUES (?,?,?,?,?)', [link.id,link.gymId,link.provider,link.externalPlaceId,link.createdAt]); }); }
@@ -929,7 +938,7 @@ export function createStore(): GymFlowStore {
       addRequirement: addEquipmentRequirement, getRequirement: getEquipmentRequirement, updateRequirement: updateEquipmentRequirement, removeRequirement: removeEquipmentRequirement, requirementsForGroup: getEquipmentRequirementsForGroup,
     },
     substitutions: { create: createExerciseSubstitution, get: getExerciseSubstitution, listForSource: listExerciseSubstitutionsForSource, listToTarget: listExerciseSubstitutionsToTarget, update: updateExerciseSubstitution },
-    users: { create: createUser, get: getUser, list: listUsers, update: updateUser },
+    users: { create: createUser, get: getUser, findByAuthIdentity: findUserByAuthIdentity, list: listUsers, update: updateUser },
     userGyms: { get: getUserGymRelationship, listByUser: listUserGymRelationships, upsert: upsertUserGymRelationship, delete: deleteUserGymRelationship, setHome: setUserGymHome, clearHome: clearUserGymHome },
     gymContexts: { get: getGymContext, set: setGymContext, clear: clearGymContext },
     social: {

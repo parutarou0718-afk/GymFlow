@@ -9,12 +9,13 @@ import { createProgramService, type Program } from '../src/modules/program';
 import { createProgramMatchingService, type ProgramGymMatchResult } from '../src/modules/program-matching';
 import { createMatchingService } from '../src/modules/matching';
 import { createUserGymService, type UserGymRelationship } from '../src/modules/user-gym';
-import { DEFAULT_LOCAL_USER_ID } from '../src/modules/user';
+import { useCurrentUser } from '../src/modules/current-user';
 import { createWorkoutService, type WorkoutSession } from '../src/modules/workout';
 import { Button, Card, SectionHeader } from '../src/components/ui';
 import { colors, spacing, typography } from '../src/lib/theme';
 
 export default function GymDetailScreen() {
+  const { user } = useCurrentUser();
   const { gymId } = useLocalSearchParams<{ gymId: string }>();
   const store = useStores();
   const gyms = useMemo(() => createGymService(store), [store]);
@@ -38,16 +39,16 @@ export default function GymDetailScreen() {
     setGym(next);
     if (!next) return;
     const [relation, items, history, list] = await Promise.all([
-      userGyms.getUserGymRelationship(DEFAULT_LOCAL_USER_ID, gymId),
+      user ? userGyms.getUserGymRelationship(user.id, gymId) : Promise.resolve(null),
       inventoryApi.getGymEquipment(gymId),
-      workouts.listCompletedWorkouts({ gymId, limit: 5 }),
-      programs.listPrograms(),
+      user ? workouts.getWorkoutHistoryForOwner(user.id) : Promise.resolve([]),
+      user ? programs.listProgramsForOwner(user.id) : Promise.resolve([]),
     ]);
     setRelationship(relation);
     setInventory(items);
-    setRecent(history);
+    setRecent(history.filter(workout => workout.gymId === gymId).slice(0, 5));
     setProgramList(list);
-  }, [gymId, gyms, inventoryApi, programs, userGyms, workouts]);
+  }, [gymId, gyms, inventoryApi, programs, user, userGyms, workouts]);
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
@@ -57,16 +58,18 @@ export default function GymDetailScreen() {
 
   const setCurrent = async () => {
     try {
-      await contexts.setCurrentGym(DEFAULT_LOCAL_USER_ID, gym.id);
+      if (!user) return;
+      await contexts.setCurrentGym(user.id, gym.id);
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to set current Gym');
     }
   };
-  const toggleFavorite = async () => { await userGyms.setFavorite(DEFAULT_LOCAL_USER_ID, gym.id, !relationship?.isFavorite); await load(); };
+  const toggleFavorite = async () => { if (!user) return; await userGyms.setFavorite(user.id, gym.id, !relationship?.isFavorite); await load(); };
   const toggleHome = async () => {
-    if (relationship?.isHome) await userGyms.clearHomeGym(DEFAULT_LOCAL_USER_ID);
-    else await userGyms.setHomeGym(DEFAULT_LOCAL_USER_ID, gym.id);
+    if (!user) return;
+    if (relationship?.isHome) await userGyms.clearHomeGym(user.id);
+    else await userGyms.setHomeGym(user.id, gym.id);
     await load();
   };
   const shareGym = () => router.push({ pathname: '/(tabs)/social' as any, params: { gymId: gym.id } });

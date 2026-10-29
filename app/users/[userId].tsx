@@ -7,8 +7,10 @@ import { createSocialProfileService } from '../../src/modules/social-profile';
 import { createUserService } from '../../src/modules/user';
 import { Button, Card, SectionHeader } from '../../src/components/ui';
 import { colors, spacing, typography } from '../../src/lib/theme';
+import { useCurrentUser } from '../../src/modules/current-user';
 
 export default function UserProfileScreen() {
+  const identity = useCurrentUser();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const store = useStores();
   const users = useMemo(() => createUserService(store), [store]);
@@ -20,11 +22,12 @@ export default function UserProfileScreen() {
 
   const load = useCallback(async () => {
     try {
-      const viewer = await users.getCurrentUser();
+      const viewer = identity.user;
+      if (!viewer) return;
       setCurrent(viewer.id);
       if (userId) setProfile(await profiles.getSocialProfile({ userId, viewerUserId: viewer.id }));
     } catch { setMessage('Profile unavailable'); }
-  }, [profiles, userId, users]);
+  }, [identity.user, profiles, userId]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   const follow = async () => {
     if (!profile || !userId) return;

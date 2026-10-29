@@ -426,6 +426,7 @@ export function createWebStore(): GymFlowStore {
     users: {
       async create(user) { if (users.some(item => item.id === user.id)) return; users.push(clone(user)); },
       async get(id) { const user = users.find(item => item.id === id); return user ? clone(user) : null; },
+      async findByAuthIdentity(provider, subject) { const user = users.find(item => item.authProvider === provider && item.authSubject === subject); return user ? clone(user) : null; },
       async list() { return users.filter(item => item.status === 'active').sort((a, b) => a.displayName.localeCompare(b.displayName)).map(clone); },
       async update(user) { const index = users.findIndex(item => item.id === user.id); if (index >= 0) users[index] = clone(user); },
     },

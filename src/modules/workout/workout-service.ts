@@ -3,7 +3,7 @@ import { completeSession, pauseSession, resumeSession } from '../../lib/workout-
 import type { CompletedSet, Exercise, SessionExercise, WorkoutReplacementReason, WorkoutSession, WorkoutSnapshot, WorkoutTemplate } from '../../types';
 import type { WorkoutStore } from './ports';
 import { createUserGymService } from '../user-gym';
-import { createUserService, DEFAULT_LOCAL_USER_ID } from '../user';
+import { createUserService } from '../user';
 
 type SetUpdate = { weight?: number; reps?: number; completed?: boolean };
 export type ListCompletedWorkoutsOptions = { gymId?: string | null; limit?: number };
@@ -37,6 +37,23 @@ export interface WorkoutService {
   listCompletedWorkouts(options?: ListCompletedWorkoutsOptions): Promise<WorkoutSession[]>;
   getWorkoutHistoryDetail(sessionId: string): Promise<WorkoutSession | null>;
   getWorkoutStats(): Promise<{ workouts: number; volume: number }>;
+  startQuickWorkoutForOwner(userId: string, options?: StartWorkoutOptions): Promise<WorkoutSession>;
+  startWorkoutFromTemplateForOwner(userId: string, input: StartWorkoutFromTemplateInput): Promise<WorkoutSession>;
+  getWorkoutForOwner(userId: string, sessionId: string): Promise<WorkoutSession | null>;
+  getWorkoutHistoryForOwner(userId: string): Promise<WorkoutSession[]>;
+  getActiveWorkoutsForOwner(userId: string): Promise<WorkoutSession[]>;
+  getWorkoutStatsForOwner(userId: string): Promise<{ workouts: number; volume: number }>;
+  getWorkoutHistoryDetailForOwner(userId: string, sessionId: string): Promise<WorkoutSession | null>;
+  pauseWorkoutForOwner(userId: string, sessionId: string): Promise<WorkoutSession>;
+  resumeWorkoutForOwner(userId: string, sessionId: string): Promise<WorkoutSession>;
+  finishWorkoutForOwner(userId: string, sessionId: string): Promise<WorkoutSession>;
+  discardWorkoutForOwner(userId: string, sessionId: string): Promise<WorkoutSession>;
+  addExerciseForOwner(userId: string, sessionId: string, exercise: Exercise): Promise<WorkoutSession>;
+  removeExerciseForOwner(userId: string, sessionId: string, exerciseId: string): Promise<WorkoutSession>;
+  addSetForOwner(userId: string, sessionId: string, exerciseId: string): Promise<WorkoutSession>;
+  removeSetForOwner(userId: string, sessionId: string, exerciseId: string, setIndex: number): Promise<WorkoutSession>;
+  updateSetForOwner(userId: string, sessionId: string, exerciseId: string, setIndex: number, data: SetUpdate): Promise<WorkoutSession>;
+  replaceWorkoutExerciseForOwner(userId: string, input: ReplaceWorkoutExerciseInput): Promise<WorkoutSession>;
 }
 
 export function createWorkoutService(store: WorkoutStore): WorkoutService {
@@ -48,15 +65,21 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
   };
 
   const reload = (sessionId: string) => getRequiredWorkout(sessionId);
+  const getRequiredWorkoutForOwner = async (userId: string, sessionId: string): Promise<WorkoutSession> => {
+    const session = await getRequiredWorkout(sessionId);
+    if (session.ownerUserId !== userId) throw new Error('WORKOUT_NOT_FOUND');
+    return session;
+  };
 
-  const start = async (template?: WorkoutTemplate, options?: StartWorkoutOptions): Promise<WorkoutSession> => {
+  const start = async (ownerUserId: string, template?: WorkoutTemplate, options?: StartWorkoutOptions): Promise<WorkoutSession> => {
     const active = await store.sessions.getActive();
     if (active) throw new Error(`An active workout already exists: ${active.id}`);
     const startedAt = Date.now();
-    const owner = await createUserService(store).getCurrentUser();
+    const owner = await createUserService(store).getUser(ownerUserId);
+    if (!owner || owner.status !== 'active') throw new Error('USER_NOT_AVAILABLE');
     const session: WorkoutSession = {
       id: generateId(),
-      ownerUserId: owner.id,
+      ownerUserId,
       templateId: template?.id ?? null,
       templateName: template?.name ?? 'Quick Workout',
       status: 'active',
@@ -89,15 +112,32 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
     return session;
   };
 
-  return {
-    startQuickWorkout: options => start(undefined, options),
+  const service: WorkoutService = {
+    async startQuickWorkout(options) {
+      const owner = await createUserService(store).getCurrentUser();
+      return start(owner.id, undefined, options);
+    },
+    async startQuickWorkoutForOwner(userId, options) {
+      return start(userId, undefined, options);
+    },
     async startWorkoutFromTemplate(input) {
       const templateId = typeof input === 'string' ? input : input.templateId;
       const template = await store.templates.get(templateId);
       if (!template) throw new Error(`Workout template not found: ${templateId}`);
-      return start(template, typeof input === 'string' ? undefined : input);
+      const owner = await createUserService(store).getCurrentUser();
+      return start(owner.id, template, typeof input === 'string' ? undefined : input);
+    },
+    async startWorkoutFromTemplateForOwner(userId, input) {
+      const templateId = typeof input === 'string' ? input : input.templateId;
+      const template = await store.templates.get(templateId);
+      if (!template || template.ownerUserId !== userId) throw new Error('PROGRAM_NOT_FOUND');
+      return start(userId, template, typeof input === 'string' ? undefined : input);
     },
     getWorkout: sessionId => store.sessions.get(sessionId),
+    async getWorkoutForOwner(userId, sessionId) {
+      const workout = await store.sessions.get(sessionId);
+      return workout?.ownerUserId === userId ? workout : null;
+    },
     async getWorkoutShareSummary(sessionId) {
       const session = await store.sessions.get(sessionId);
       return session ? { id: session.id, date: session.completedAt ?? session.startedAt, duration: session.duration ?? 0, exerciseCount: session.exercises.length, volume: session.totalVolume ?? 0, gymId: session.gymId ?? null } : null;
@@ -158,8 +198,10 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
         },
       });
       const persisted = await reload(sessionId);
-      if (persisted.gymId) {
-        await userGyms.recordGymVisit(DEFAULT_LOCAL_USER_ID, persisted.gymId, persisted.completedAt);
+      const completedGymId = persisted.gymId;
+      if (completedGymId) {
+        if (!persisted.ownerUserId) throw new Error('WORKOUT_OWNER_MISSING');
+        await userGyms.recordGymVisit(persisted.ownerUserId, completedGymId, persisted.completedAt ?? Date.now());
       }
       return persisted;
     },
@@ -199,6 +241,10 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       await store.sessions.updateSet(exerciseId, setIndex, data);
       return reload(sessionId);
     },
+    async getActiveWorkoutsForOwner(userId) {
+      const active = await store.sessions.getActive();
+      return active?.ownerUserId === userId ? [active] : [];
+    },
     async replaceWorkoutExercise(input) {
       const session = await getRequiredWorkout(input.sessionId);
       if (session.status !== 'active' && session.status !== 'paused') throw new Error('WORKOUT_NOT_ACTIVE');
@@ -237,6 +283,9 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       return reload(session.id);
     },
     getWorkoutHistory: () => store.sessions.getAll(),
+    async getWorkoutHistoryForOwner(userId) {
+      return (await store.sessions.getAll()).filter(workout => workout.ownerUserId === userId);
+    },
     async listCompletedWorkouts(options = {}) {
       if (options.limit != null && (!Number.isInteger(options.limit) || options.limit < 0)) throw new Error('Invalid workout limit');
       const completed = (await store.sessions.getAll()).filter(item => item.status === 'completed' && (options.gymId === undefined || item.gymId === options.gymId));
@@ -244,6 +293,10 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       return options.limit == null ? completed : completed.slice(0, options.limit);
     },
     getWorkoutHistoryDetail: sessionId => store.sessions.get(sessionId),
+    async getWorkoutHistoryDetailForOwner(userId, sessionId) {
+      const workout = await store.sessions.get(sessionId);
+      return workout?.ownerUserId === userId ? workout : null;
+    },
     async getWorkoutStats() {
       const [workouts, volume] = await Promise.all([
         store.sessions.getTotalWorkouts(),
@@ -251,5 +304,51 @@ export function createWorkoutService(store: WorkoutStore): WorkoutService {
       ]);
       return { workouts, volume };
     },
+    async getWorkoutStatsForOwner(userId) {
+      const workouts = await store.sessions.getAll();
+      const owned = workouts.filter(workout => workout.ownerUserId === userId);
+      return { workouts: owned.length, volume: owned.reduce((total, workout) => total + (workout.totalVolume ?? 0), 0) };
+    },
+    async pauseWorkoutForOwner(userId, sessionId) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.pauseWorkout(sessionId);
+    },
+    async resumeWorkoutForOwner(userId, sessionId) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.resumeWorkout(sessionId);
+    },
+    async finishWorkoutForOwner(userId, sessionId) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.finishWorkout(sessionId);
+    },
+    async discardWorkoutForOwner(userId, sessionId) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.discardWorkout(sessionId);
+    },
+    async addExerciseForOwner(userId, sessionId, exercise) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.addExercise(sessionId, exercise);
+    },
+    async removeExerciseForOwner(userId, sessionId, exerciseId) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.removeExercise(sessionId, exerciseId);
+    },
+    async addSetForOwner(userId, sessionId, exerciseId) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.addSet(sessionId, exerciseId);
+    },
+    async removeSetForOwner(userId, sessionId, exerciseId, setIndex) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.removeSet(sessionId, exerciseId, setIndex);
+    },
+    async updateSetForOwner(userId, sessionId, exerciseId, setIndex, data) {
+      await getRequiredWorkoutForOwner(userId, sessionId);
+      return service.updateSet(sessionId, exerciseId, setIndex, data);
+    },
+    async replaceWorkoutExerciseForOwner(userId, input) {
+      await getRequiredWorkoutForOwner(userId, input.sessionId);
+      return service.replaceWorkoutExercise(input);
+    },
   };
+  return service;
 }

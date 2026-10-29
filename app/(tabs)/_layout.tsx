@@ -5,6 +5,7 @@
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { colors, spacing, radius } from '../../src/lib/theme';
+import { productFeatures } from '../../src/lib/product-features';
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   const icons: Record<string, string> = {
@@ -71,7 +72,7 @@ export default function TabLayout() {
       <Tabs.Screen name="location" options={{ title: 'Location' }} />
       <Tabs.Screen name="discovery" options={{ title: 'Discovery' }} />
       <Tabs.Screen name="current-gym" options={{ title: 'Current Gym' }} />
-      <Tabs.Screen name="social" options={{ title: 'Social' }} />
+      <Tabs.Screen name="social" options={{ title: 'Social', href: productFeatures.socialEnabled ? undefined : null }} />
       <Tabs.Screen
         name="settings"
         options={{

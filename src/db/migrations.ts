@@ -10,7 +10,7 @@ export interface Migration {
   up(): Promise<void>;
 }
 
-export const LATEST_SCHEMA_VERSION = 10;
+export const LATEST_SCHEMA_VERSION = 12;
 const COMPATIBILITY_BASELINE_VERSION = 6;
 
 export async function runMigrationLedger(adapter: MigrationLedgerAdapter, migrations: Migration[]): Promise<number[]> {
@@ -209,6 +209,21 @@ function sqliteMigrations(database: MigrationDatabase): Migration[] {
         CREATE INDEX IF NOT EXISTS idx_social_comments_post ON social_comments(post_id, created_at ASC, id ASC);
       `),
     },
+    {
+      version: 11,
+      name: 'domain-user-auth-mapping',
+      up: async () => {
+        await ensureColumn(database, 'users', 'auth_provider', 'TEXT');
+        await ensureColumn(database, 'users', 'auth_subject', 'TEXT');
+        await database.execAsync('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_identity ON users(auth_provider, auth_subject) WHERE auth_provider IS NOT NULL AND auth_subject IS NOT NULL;');
+      },
+    },
+    { version: 12, name: 'gym-import-provenance', up: async () => {
+      await ensureColumn(database, 'gyms', 'operator_gym_key', 'TEXT');
+      await ensureColumn(database, 'gyms', 'source_name', 'TEXT');
+      await ensureColumn(database, 'gyms', 'source_ref', 'TEXT');
+      await database.execAsync('CREATE UNIQUE INDEX IF NOT EXISTS idx_gyms_operator_key ON gyms(operator_gym_key) WHERE operator_gym_key IS NOT NULL;');
+    } },
   ];
 }
 

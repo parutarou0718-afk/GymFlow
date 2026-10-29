@@ -7,7 +7,7 @@ export function createGymService(store: GymStorePort) {
   return {
     async createGym(input: CreateGymInput): Promise<Gym> {
       const now = Date.now();
-      const gym: Gym = { id: generateId(), name: input.name.trim(), branchName: input.branchName ?? null, address: input.address ?? null, latitude: input.latitude ?? null, longitude: input.longitude ?? null, externalProvider: input.externalProvider ?? null, externalPlaceId: input.externalPlaceId ?? null, status: 'active', createdAt: now, updatedAt: now };
+      const gym: Gym = { id: generateId(), name: input.name.trim(), branchName: input.branchName ?? null, address: input.address ?? null, latitude: input.latitude ?? null, longitude: input.longitude ?? null, externalProvider: input.externalProvider ?? null, externalPlaceId: input.externalPlaceId ?? null, operatorGymKey: input.operatorGymKey ?? null, sourceName: input.sourceName ?? null, sourceRef: input.sourceRef ?? null, status: input.status ?? 'active', createdAt: now, updatedAt: now };
       if (!gym.name) throw new Error('Gym name is required');
       validateCoordinatePair(gym.latitude, gym.longitude);
       await store.gyms.create(gym);

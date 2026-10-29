@@ -16,16 +16,33 @@ const SESSION_TOKEN_KEY = 'gymflow_supabase_session';
 // --- Client ---
 let supabaseClient: ReturnType<typeof createClient> | null = null;
 
+type SupabaseConfiguration = { url: string; anonKey: string };
+
+function getBuildConfiguration(): SupabaseConfiguration | null {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  return url && anonKey ? { url, anonKey } : null;
+}
+
+async function getConfiguration(): Promise<SupabaseConfiguration | null> {
+  const [storedUrl, storedAnonKey] = await Promise.all([
+    SecureStore.getItemAsync(SUPABASE_URL_KEY),
+    SecureStore.getItemAsync(SUPABASE_ANON_KEY),
+  ]);
+  if (storedUrl?.trim() && storedAnonKey?.trim()) {
+    return { url: storedUrl.trim(), anonKey: storedAnonKey.trim() };
+  }
+  return getBuildConfiguration();
+}
+
 export async function getSupabaseClient(): Promise<ReturnType<typeof createClient> | null> {
   if (Platform.OS === 'web') return null;
   if (supabaseClient) return supabaseClient;
 
-  const url = await SecureStore.getItemAsync(SUPABASE_URL_KEY);
-  const anonKey = await SecureStore.getItemAsync(SUPABASE_ANON_KEY);
+  const configuration = await getConfiguration();
+  if (!configuration) return null;
 
-  if (!url || !anonKey) return null;
-
-  supabaseClient = createClient(url, anonKey, {
+  supabaseClient = createClient(configuration.url, configuration.anonKey, {
     auth: {
       storage: {
         getItem: async (key: string) => SecureStore.getItemAsync(key),
@@ -47,9 +64,7 @@ export async function configureSupabase(url: string, anonKey: string): Promise<v
 
 export async function isConfigured(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
-  const url = await SecureStore.getItemAsync(SUPABASE_URL_KEY);
-  const key = await SecureStore.getItemAsync(SUPABASE_ANON_KEY);
-  return !!(url && key);
+  return Boolean(await getConfiguration());
 }
 
 // ========================================
